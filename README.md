@@ -163,6 +163,8 @@ await htmlToDocx(html, {
 
 **内联**：`strong/b`、`em/i`、`u`、`s/strike/del`、`code`（行内代码）、`a`、`span`、`br`、`img`、`math`（见下文）
 
+**特殊**：`page-break` 自定义标签（见 [分页](#分页)）
+
 **行为细节**：
 
 - HTML 空白默认折叠为单空格；`<pre>` 内保留所有空白与换行
@@ -193,6 +195,48 @@ await htmlToDocx(html, {
 ```
 
 > **CJK 字体提示**：docx 的 `<w:rFonts>` 只把 `font-family` 写入 `ascii` / `hAnsi` 槽位；`eastAsia` 槽不变，因此中文字符仍按 Word 默认中文字体渲染。要替换中文字体需要走全局 `defaultFont` 或未来的 `fontMap` 选项。
+
+## 分页
+
+支持三种触发器，编译为 OOXML `<w:br w:type="page"/>`，Word/WPS 中正常分页：
+
+### 1. `<page-break>` 自定义标签
+
+```html
+<p>第一页内容</p>
+<page-break>
+<p>第二页内容</p>
+```
+
+伪自闭合写法 `<page-break/>` 与 `<page-break />` 也能识别。可以放在段内（与文本同段）：
+
+```html
+<p>上半段<page-break/>下半段在新一页继续。</p>
+```
+
+### 2. `<hr class="page-break">` 替代横线为分页
+
+```html
+<p>章节一</p>
+<hr class="page-break">
+<p>章节二</p>
+```
+
+class 列表中包含 `page-break` token 即触发（`<hr class="foo page-break bar">` 也行）；近似名 `page-break-x` 不会误触。普通 `<hr>` 仍画水平线，行为不变。
+
+### 3. CSS `page-break-before/after` 与 CSS3 `break-before/after`
+
+挂在任何块级元素的 inline style 上：
+
+```html
+<h2 style="page-break-before: always">新章节</h2>
+<p>内容...</p>
+<p style="page-break-after: always">小节末段</p>
+```
+
+强制分页取值识别：legacy `always` / `left` / `right`；CSS3 `page` / `left` / `right` / `recto` / `verso` / `always` / `all`。`auto` / `avoid` 等值不触发。
+
+> 同时声明 before + after 时按 CSS 标准插两次分页（元素之前一次，之后一次）。
 
 ## 数学公式（MathML → OMML）
 
