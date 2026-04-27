@@ -77,7 +77,7 @@ export type HtmlToDocxOptions = {
   subject?: string
   /** 关键词，逗号分隔（cp:keywords） */
   keywords?: string
-  /** 最后修改者（cp:lastModifiedBy）。未设置时 Word 默认沿用 creator */
+  /** 最后修改者（cp:lastModifiedBy）。未设置时 docx 库默认写入 "Un-named" */
   lastModifiedBy?: string
 
   /** 默认字体，默认 'Calibri' */

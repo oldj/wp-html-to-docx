@@ -108,7 +108,7 @@ await htmlToDocx(html, {
   description: '描述',                 // dc:description
   subject: '主题',                     // dc:subject
   keywords: '财报, 2026, Q4',          // cp:keywords，逗号分隔
-  lastModifiedBy: '李四',              // cp:lastModifiedBy，未设置时 Word 默认沿用 creator
+  lastModifiedBy: '李四',              // cp:lastModifiedBy，未设置时 docx 库默认写入 "Un-named"
 
   // 图片解析（见下文）
   imageResolver: undefined,
