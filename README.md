@@ -161,7 +161,7 @@ await htmlToDocx(html, {
 
 **表格**：`table`、`thead`、`tbody`、`tfoot`、`tr`、`th`、`td`（含 `colspan` / `rowspan`；`thead` 行自动加粗 + 浅灰背景）
 
-**内联**：`strong/b`、`em/i`、`u`、`s/strike/del`、`code`（行内代码）、`a`、`span`、`br`、`img`
+**内联**：`strong/b`、`em/i`、`u`、`s/strike/del`、`code`（行内代码）、`a`、`span`、`br`、`img`、`math`（见下文）
 
 **行为细节**：
 
@@ -169,9 +169,72 @@ await htmlToDocx(html, {
 - HTML 实体（`&amp;` `&lt;` `&nbsp;` `&#x4e2d;` 等）自动解码
 - `<a>` 与内联格式可任意组合（如 `<a><strong>x</strong></a>`）
 
-## 数学公式（MVP 占位）
+## 内联 `style` 属性
 
-当前版本识别 `<math>` 标签并在 IR 层保留原始 MathML 字符串，但渲染时输出 `[math]` 占位文本。完整的 MathML → OMML 转换在后续版本接入（计划用 [`mathml2omml`](https://www.npmjs.com/package/mathml2omml) + [`temml`](https://www.npmjs.com/package/temml)）。
+支持 `<span style="...">` / `<p style="...">` 等元素上的常用 CSS 属性，自动叠加到对应 docx 样式。**不**实现完整的 CSS 选择器引擎、cascade 与 specificity——只解析直接出现在元素上的内联声明。
+
+| CSS 属性 | docx 映射 | 说明 |
+|---|---|---|
+| `color` | `TextRun.color` | 命名色 / `#RGB` / `#RRGGBB` / `rgb()` |
+| `background` / `background-color` | `TextRun.shading`（CLEAR + fill） | 同上；只取首个颜色 token |
+| `font-size` | `TextRun.size` | `pt` / `px` / `em` / `rem` / `%`；`em` 以 12pt 为基准 |
+| `font-family` | `TextRun.font` | 取首项去引号 |
+| `font-weight: bold` 或数值 ≥ 600 | `bold: true` | 仅加法（不会用 `normal` 取消父级 bold） |
+| `font-style: italic` | `italics: true` | 同上 |
+| `text-decoration: underline / line-through` | `underline` / `strike` | 支持多个值组合 |
+| `text-align`（块级元素） | `Paragraph.alignment` | left / right / center / justify |
+
+```html
+<p style="text-align: center">
+  <span style="color: #d33; background-color: yellow; font-size: 14pt">
+    强调文本
+  </span>
+</p>
+```
+
+> **CJK 字体提示**：docx 的 `<w:rFonts>` 只把 `font-family` 写入 `ascii` / `hAnsi` 槽位；`eastAsia` 槽不变，因此中文字符仍按 Word 默认中文字体渲染。要替换中文字体需要走全局 `defaultFont` 或未来的 `fontMap` 选项。
+
+## 数学公式（MathML → OMML）
+
+`<math>` 标签会被转换成 OOXML Math（OMML）真实嵌入文档，Word/WPS 中可正常预览与编辑。
+
+```html
+<!-- 行内：与文本同段 -->
+<p>勾股定理 <math><msup><mi>a</mi><mn>2</mn></msup><mo>+</mo>...</math>。</p>
+
+<!-- 块级：独立成段，居中（Word 对显示式公式的默认行为） -->
+<math display="block">
+  <mfrac>
+    <mrow>...</mrow>
+    <mrow>...</mrow>
+  </mfrac>
+</math>
+```
+
+### 启用方式
+
+数学转换依赖第三方包 [`mathml2omml`](https://www.npmjs.com/package/mathml2omml)（**LGPL-3.0-or-later**），作为 **optional peerDependency** 提供。需要数学公式时手动安装：
+
+```bash
+npm install mathml2omml
+```
+
+未安装时，`<math>` 会退回到 `[math]` 文本占位，并在首次出现时控制台 warn 一次（不会让整个转换失败）。
+
+### 行为细节
+
+- 默认按 HTML5 phrasing content 处理：`<math>...</math>` 是行内的，与前后文字共享段落
+- 升级到块级需要显式 `display="block"`：在 `<m:oMathPara>` 中独占一段
+- 同一段 MathML 在文档中重复出现时只转换一次（按字符串去重）
+
+### 浏览器打包
+
+由于动态 `await import('mathml2omml')`，部分构建工具默认不会把 optional peer 打进 bundle。如果你的浏览器场景需要数学公式：
+
+- **Vite / Rollup**：直接 `npm install mathml2omml` 后即可，运行时被打入。
+- **Webpack**：可能需要在 `optimization.splitChunks` 或异步 chunk 配置里允许动态 import。
+
+不需要数学公式的浏览器场景可以放心忽略——动态 import 失败会被库内部捕获并退回占位。
 
 ## API 速查
 
