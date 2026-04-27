@@ -101,10 +101,14 @@ await htmlToDocx(html, {
     template: '第 {PAGE} 页 / 共 {TOTAL} 页',
   },
 
-  // 文档元数据
-  title: '我的文档',
-  creator: '作者',
-  description: '描述',
+  // 文档元数据（写入 docProps/core.xml，对应 OOXML core properties；
+  // 在 Word 的「文件 → 信息」面板里可见与编辑）
+  title: '我的文档',                   // dc:title
+  creator: '张三',                     // dc:creator —— 即「作者」字段（Word UI 显示为 Author）
+  description: '描述',                 // dc:description
+  subject: '主题',                     // dc:subject
+  keywords: '财报, 2026, Q4',          // cp:keywords，逗号分隔
+  lastModifiedBy: '李四',              // cp:lastModifiedBy，未设置时 Word 默认沿用 creator
 
   // 图片解析（见下文）
   imageResolver: undefined,
