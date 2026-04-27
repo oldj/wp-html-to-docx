@@ -10,6 +10,6 @@ coverage
 plan.md
 
 # demo 产物
-examples/out.docx
+examples/out*.docx
 # Office 临时锁文件
 ~$*
