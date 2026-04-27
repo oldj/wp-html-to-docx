@@ -1,9 +1,18 @@
 import { describe, it, expect } from 'vitest'
-import { htmlToDocx } from './index.js'
+import { htmlToDocument, htmlToDocx } from './index.js'
 
-describe('htmlToDocx', () => {
-  // 占位用例：尚未实现，应当抛出明确错误
-  it('当前为未实现状态，应抛出错误', async () => {
-    await expect(htmlToDocx('<p>hi</p>')).rejects.toThrow('not implemented')
+// 阶段 0 冒烟：管道贯通即可（暂不校验内容，阶段 1 起补齐）
+describe('htmlToDocument 冒烟', () => {
+  it('返回 docx Document 实例', async () => {
+    const doc = await htmlToDocument('<p>hi</p>')
+    expect(doc).toBeDefined()
+  })
+})
+
+describe('htmlToDocx 冒烟', () => {
+  it('返回 Uint8Array', async () => {
+    const u8 = await htmlToDocx('<p>hi</p>')
+    expect(u8).toBeInstanceOf(Uint8Array)
+    expect(u8.byteLength).toBeGreaterThan(0)
   })
 })

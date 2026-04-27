@@ -1,6 +1,6 @@
 # AGENTS.md
 
-> html-to-docx 开目发指南，为 AI 编程助手提供项目上下文和开发规范。
+> wp-html-to-docx 开发指南，为 AI 编程助手提供项目上下文和开发规范。
 
 ## 语言
 

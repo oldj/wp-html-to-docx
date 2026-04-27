@@ -1,14 +1,14 @@
 {
-  "name": "html-to-docx",
+  "name": "wp-html-to-docx",
   "version": "0.1.0",
-  "description": "",
-  "homepage": "https://github.com/oldj/html-to-docx#readme",
+  "description": "Convert HTML to DOCX, works in browser and Node.js.",
+  "homepage": "https://github.com/oldj/wp-html-to-docx#readme",
   "bugs": {
-    "url": "https://github.com/oldj/html-to-docx/issues"
+    "url": "https://github.com/oldj/wp-html-to-docx/issues"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/oldj/html-to-docx.git"
+    "url": "git+https://github.com/oldj/wp-html-to-docx.git"
   },
   "license": "MIT",
   "author": "oldj",
@@ -18,7 +18,8 @@
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
     }
   },
   "files": [
@@ -40,14 +41,18 @@
     "coverage": "vitest run --coverage"
   },
   "dependencies": {
-    "docx": "^9.6.1"
+    "docx": "^9.6.1",
+    "parse5": "^8.0.1"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@types/jsdom": "^28.0.1",
     "@types/node": "^25.6.0",
     "@vitest/coverage-v8": "^4.1.5",
     "eslint": "^10.2.1",
     "eslint-config-prettier": "^10.1.8",
+    "fflate": "^0.8.2",
+    "jsdom": "^29.0.2",
     "prettier": "^3.8.3",
     "tsx": "^4.21.0",
     "typescript": "^6.0.3",

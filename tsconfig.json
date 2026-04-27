@@ -14,7 +14,7 @@
     "isolatedModules": true,
     "resolveJsonModule": true,
     "skipLibCheck": true,
-    "types": ["node"],
+    "types": [],
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "noImplicitOverride": true,
