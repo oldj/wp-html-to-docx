@@ -65,10 +65,20 @@ export type HtmlToDocxOptions = {
   footer?: HeaderFooterValue
   pageNumber?: PageNumberOptions
 
-  // 文档级元数据
+  // 文档级元数据（对应 OOXML core properties / docProps/core.xml，
+  // 在 Word 的「文件 → 信息」面板里可见与编辑）
+  /** 标题（dc:title） */
   title?: string
+  /** 作者（dc:creator）。Word UI 中显示为「作者」 */
   creator?: string
+  /** 描述 / 备注（dc:description） */
   description?: string
+  /** 主题（dc:subject） */
+  subject?: string
+  /** 关键词，逗号分隔（cp:keywords） */
+  keywords?: string
+  /** 最后修改者（cp:lastModifiedBy）。未设置时 Word 默认沿用 creator */
+  lastModifiedBy?: string
 
   /** 默认字体，默认 'Calibri' */
   defaultFont?: string

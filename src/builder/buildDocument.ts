@@ -17,9 +17,13 @@ export function buildDocument(ir: Block[], ctx: BuildContext): Document {
   }))
   const section = buildSection(ctx.options, children)
   return new Document({
+    // OOXML core properties：透传给 docx 库写入 docProps/core.xml
     title: ctx.options.title,
     creator: ctx.options.creator,
     description: ctx.options.description,
+    subject: ctx.options.subject,
+    keywords: ctx.options.keywords,
+    lastModifiedBy: ctx.options.lastModifiedBy,
     styles: buildStyles(ctx),
     numbering:
       numberingConfig.length > 0 ? { config: numberingConfig } : undefined,
