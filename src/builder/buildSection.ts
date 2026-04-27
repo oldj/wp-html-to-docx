@@ -135,7 +135,6 @@ function buildHeaderFooterParagraphs(
     // 把页码内容放进对应槽位（覆盖；与原内容并存时给出 console.warn）
     const existing = slots[pn.slot]
     if (existing !== undefined && !(existing.kind === 'text' && existing.text === '')) {
-      // eslint-disable-next-line no-console
       console.warn(
         `pageNumber.position '${pn.slot}' overlaps with existing ${region} content; pageNumber takes priority`,
       )
@@ -210,7 +209,6 @@ function renderPageNumberRun(template: string): TextRun {
   type Part = string | typeof PageNumber.CURRENT | typeof PageNumber.TOTAL_PAGES
   const parts: Part[] = []
   let rest = template
-  // eslint-disable-next-line no-constant-condition
   while (true) {
     const match = /\{(PAGE|TOTAL)\}/.exec(rest)
     if (!match) {

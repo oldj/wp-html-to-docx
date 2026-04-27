@@ -96,8 +96,9 @@ function appendBlock(block: Block, out: FileChild[], ctx: BuildContext): void {
       return
     case 'math': {
       const omml = ctx.mathOmml.get(block.mathml)
-      // display=block 包 m:oMathPara；display=inline（极罕见出现在块级 IR 上）
-      // 也直接用 m:oMath 插入段落
+      // walker 已把无 display=block 的 math 收进了行内路径（inlineCollector），
+      // 这里实际只会走到 block.display === 'block' 分支。inline 分支是保险 fallback：
+      // 万一外部代码直接构造 Block.math({display:'inline'}) 也不会渲染失败
       const ic =
         omml !== undefined
           ? block.display === 'block'

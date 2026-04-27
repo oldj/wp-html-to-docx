@@ -1,5 +1,5 @@
 // 推断图片类型：优先从 mime，回退到 magic bytes
-// docx ImageRun 接受 'jpg' | 'png' | 'gif' | 'bmp'（svg 需要额外 fallback，MVP 不支持）
+// docx ImageRun 接受 'jpg' | 'png' | 'gif' | 'bmp'；svg 需要 docx 库的 fallback 机制，本库暂不支持
 
 export type DocxImageType = 'jpg' | 'png' | 'gif' | 'bmp'
 

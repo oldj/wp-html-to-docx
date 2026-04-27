@@ -1,7 +1,8 @@
 // 贯穿 walker 与 builder 的上下文，收集需要注入到 Document 顶层的副作用：
 // - numbering：列表 reference 定义（每个顶层 list / 嵌套类型切换时注册一次）
-// - imageRequests：异步加载的图片
-// - listSeq：递增 numbering reference id
+// - images：异步加载的图片资源（src → ImageAsset），由 collectImages 填充
+// - mathOmml：MathML → OMML 的转换结果（mathml 原文 → OMML 字符串），由 collectMath 填充
+// - listSeq：私有自增计数器，用于生成不重复的 numbering reference id
 
 import type { ILevelsOptions } from 'docx'
 import type { HtmlToDocxOptions } from '../options.js'

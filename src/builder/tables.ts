@@ -1,5 +1,6 @@
 // 表格 builder
-// MVP：列宽均分（auto），thead 行加粗 + 灰底；不支持单元格合并
+// 列宽统一按 100% 表宽自动分配；thead 行自动加粗 + 灰底（HEADER_SHADING）。
+// 支持 colspan / rowspan（>1 时透传给 docx）；HTML 上的 colgroup / col 暂不读取
 
 import {
   Paragraph,

@@ -21,7 +21,7 @@ export function parseDataUrl(src: string): DataUrlParsed {
   const payload = match[3] ?? ''
 
   if (!isBase64) {
-    // 简单的 percent-decoding，足够 MVP 使用
+    // 非 base64：仅按 percent-decoding 处理；图片 data URL 几乎都是 base64，文本场景才会落到这里
     const text = decodeURIComponent(payload)
     return { mime, data: textEncode(text) }
   }

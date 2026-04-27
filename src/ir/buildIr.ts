@@ -67,8 +67,10 @@ function walkBlocks(
     }
     flushInline()
 
-    // 块级 CSS page-break-before/after：标准 CSS 语义，before 在前 / after 在后；
-    // <hr class="page-break"> 和 <page-break> 自身就是分页符，不再叠加
+    // 块级 CSS page-break-before/after：按标准语义把分页符插在元素前/后。
+    // 元素自身的产物（hr / pageBreak / 普通段落 …）由 emitBlockForElement 决定；
+    // 当用户同时在 <hr class="page-break"> 上又写了 page-break-after CSS 时，会
+    // 叠加产生 2 个分页符——视为用户冲突写法，不特判
     const sides = pageBreakSides(node)
     if (sides.before) out.push({ kind: 'pageBreak' })
     out.push(...emitBlockForElement(node, ctx, listStack))
@@ -201,9 +203,10 @@ function walkList(
 
 /**
  * 走查一个 <li>。
- * - 当前 li 的直系内联文本 → list-item.inlines
- * - 嵌套 ul/ol → 递归后追加（共享或新建 reference 由 walkList 决定）
- * - li 内的其它块级（如 p）：阶段 1 简化处理为内联展平
+ * - 直系文本与内联元素 → list-item.inlines
+ * - 嵌套 ul/ol → 递归后平铺到 blockTail（共享或新建 reference 由 walkList 决定）
+ * - <math> / <page-break>：作为 phrasing 元素整体保留，由 collectInlines 各自产 Inline
+ * - 其它块级（如 p / div）：把直系内联子节点展平到当前 li，避免在 li 内产生嵌套段落
  */
 function walkListItem(
   node: ParsedElement,
