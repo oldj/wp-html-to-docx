@@ -39,10 +39,13 @@ export type {
 
 export async function htmlToDocument(
   html: string,
-  options: HtmlToDocxOptions = {},
+  options?: HtmlToDocxOptions | null,
 ): Promise<Document> {
+  // `= {}` 默认值仅在参数为 undefined 时触发；JS 调用方显式传 null 会让
+  // 后续 `ctx.options.xxx` 抛不可定位的 TypeError。这里在边界统一兜底。
+  const opts = options ?? {}
   const nodes = parseHtmlBodyChildren(html)
-  const ctx = new BuildContext(options)
+  const ctx = new BuildContext(opts)
   const ir = buildIr(nodes, ctx)
   // 异步阶段：图片加载 + MathML→OMML 转换；都把异步 IO 集中在这里，
   // 让 builder 阶段保持同步。两者无依赖关系，可并行。
@@ -52,7 +55,7 @@ export async function htmlToDocument(
 
 export async function htmlToDocx(
   html: string,
-  options: HtmlToDocxOptions = {},
+  options?: HtmlToDocxOptions | null,
 ): Promise<Uint8Array> {
   const doc = await htmlToDocument(html, options)
   return pack(doc)

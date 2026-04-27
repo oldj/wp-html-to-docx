@@ -51,12 +51,13 @@ describe('builder XML - image', () => {
     expect(document).toContain('<w:drawing>')
   })
 
-  it('<a href><img/></a> 包成 hyperlink，使图片可点击', async () => {
-    // 防回归：image inline 上的 style.link 曾被 builder 忽略，超链接丢失
+  it('<a href><img/></a> 把 drawing 包在 hyperlink 里面，使图片真正可点击', async () => {
+    // 防回归：image inline 上的 style.link 曾被 builder 忽略，超链接丢失。
+    // 必须断言 <w:drawing> 出现在 <w:hyperlink>...</w:hyperlink> 内部，
+    // 否则「文本带链接 + 图片无链接」这种半坏状态也会让弱断言通过
     const { document } = await unpack(
       `<p><a href="https://example.com"><img src="${TINY_PNG_DATA_URL}"/></a></p>`,
     )
-    expect(document).toContain('w:hyperlink')
-    expect(document).toContain('<w:drawing>')
+    expect(document).toMatch(/<w:hyperlink[\s\S]*?<w:drawing>[\s\S]*?<\/w:hyperlink>/)
   })
 })

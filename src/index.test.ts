@@ -20,4 +20,16 @@ describe('htmlToDocx 顶层 API', () => {
     expect(files['word/document.xml']).toBeDefined()
     expect(strFromU8(files['word/document.xml']!)).toContain('hi')
   })
+
+  it('options 省略 / undefined / null 都能正常工作', async () => {
+    // 防回归：JS 调用方显式传 null 时 `= {}` 默认值不触发，曾让 ctx.options.xxx
+    // 抛不可定位的 TypeError。边界已统一兜底
+    const a = await htmlToDocx('<p>hi</p>')
+    const b = await htmlToDocx('<p>hi</p>', undefined)
+    const c = await htmlToDocx('<p>hi</p>', null)
+    for (const u8 of [a, b, c]) {
+      expect(u8).toBeInstanceOf(Uint8Array)
+      expect(u8.byteLength).toBeGreaterThan(0)
+    }
+  })
 })
