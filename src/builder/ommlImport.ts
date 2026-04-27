@@ -24,8 +24,9 @@ export function ommlToImported(omml: string): ImportedXmlComponent | null {
       if (item instanceof ImportedXmlComponent) return item
     }
   }
-  // 兜底：直接返回原对象（极少触发，且至少不会丢内容）
-  return wrap
+  // 找不到合法子节点：返回 null 让上层走 [math] 占位。
+  // 不能直接返回 wrap —— 那会把 <undefined> 包裹写入 document.xml，Word 打不开
+  return null
 }
 
 /** 块级：用 <m:oMathPara> 包一层，让公式独占一段 */

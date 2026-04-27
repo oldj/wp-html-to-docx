@@ -101,6 +101,16 @@ describe('docx <undefined> 包裹被正确剥离', () => {
   })
 })
 
+describe('MathML 文本中含 XML 特殊字符（&lt; / &gt; / &amp;）仍能转出 OMML', () => {
+  // 守住 serializeNode 转义回归：parse5 把 &lt; 解码为字面 <，
+  // 若 serializeNode 不转义就会产出非法 XML，mml2omml 抛错 → 退回 [math] 占位
+  it('不等式 a < b 保留为 m:oMath，不退回 [math]', async () => {
+    const xml = await getDocXml('<p><math><mi>a</mi><mo>&lt;</mo><mi>b</mi></math></p>')
+    expect(xml).toContain('<m:oMath')
+    expect(xml).not.toContain('[math]')
+  })
+})
+
 // 同一段 MathML 出现多次时的「真正去重」断言（ctx.mathOmml.size === 1）
 // 由 ir/mathCollector.test.ts 直接验证；builder 层只能间接看到 OMML 出现次数，
 // 不足以反映「转换只跑一次」

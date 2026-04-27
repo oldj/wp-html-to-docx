@@ -46,6 +46,36 @@ describe('_ensureMathmlNamespace - 直接断言补全行为', () => {
   })
 })
 
+describe('_escapeOmmlTextContent - 修复 mml2omml 文本未转义的产物', () => {
+  it('m:t 内的 < / > / & 被转回 entity', async () => {
+    const { _escapeOmmlTextContent } = await import('./mml2omml.js')
+    const input = '<m:oMath><m:r><m:t xml:space="preserve">a<b&c>d</m:t></m:r></m:oMath>'
+    const out = _escapeOmmlTextContent(input)
+    expect(out).toContain('<m:t xml:space="preserve">a&lt;b&amp;c&gt;d</m:t>')
+    expect(out).not.toMatch(/<m:t[^>]*>a<b/)
+  })
+
+  it('m:t 内无特殊字符：原样返回', async () => {
+    const { _escapeOmmlTextContent } = await import('./mml2omml.js')
+    const input = '<m:oMath><m:r><m:t xml:space="preserve">1</m:t></m:r></m:oMath>'
+    expect(_escapeOmmlTextContent(input)).toBe(input)
+  })
+
+  it('已合法转义的 entity 不重复转义（&amp; 不变成 &amp;amp;）', async () => {
+    const { _escapeOmmlTextContent } = await import('./mml2omml.js')
+    const input = '<m:oMath><m:r><m:t>&amp; &lt; &gt; &#65; &#x42;</m:t></m:r></m:oMath>'
+    expect(_escapeOmmlTextContent(input)).toBe(input)
+  })
+
+  it('不误匹同前缀标签 <m:type ...>（regex 边界回归）', async () => {
+    const { _escapeOmmlTextContent } = await import('./mml2omml.js')
+    // 此前的 regex 没有 \b 会从 <m:type 起步，把 </m:fPr> 等结构当成 m:t 内容吞掉
+    const input =
+      '<m:f><m:fPr><m:type m:val="bar"/></m:fPr><m:num><m:r><m:t xml:space="preserve">1</m:t></m:r></m:num></m:f>'
+    expect(_escapeOmmlTextContent(input)).toBe(input)
+  })
+})
+
 describe('mathmlToOmml 软退回', () => {
   it('正常路径：返回非空 OMML 字符串', async () => {
     const { mathmlToOmml } = await import('./mml2omml.js')

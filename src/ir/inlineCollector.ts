@@ -136,13 +136,31 @@ function applyTagStyle(tag: string, base: InlineStyle, el: ParsedElement): Inlin
       break
     case 'a': {
       const href = getAttr(el, 'href')
-      if (href) style = { ...style, link: href }
+      // 协议白名单：仅放行 http(s)/mailto/tel/ftp 与锚点/相对路径；
+      // 拦下 javascript: / data: 等，避免不可信 HTML 把脚本/数据 URL 写进 docx 链接
+      if (href && isSafeHref(href)) style = { ...style, link: href }
       break
     }
     // span / mark / sub / sup 等：仅透传，由 inline style 决定外观
   }
   // 第二层：inline `style` 属性按 plan.md「进阶 B」范围内叠加
   return mergeInlineCss(style, getAttr(el, 'style'))
+}
+
+/**
+ * href 协议白名单。放行：
+ * - http / https / mailto / tel / ftp
+ * - 锚点（#xxx）、相对路径（/foo、./foo、?q=x）
+ * 拦下：javascript:、data: 等可能携带脚本/任意载荷的协议。
+ */
+function isSafeHref(href: string): boolean {
+  const trimmed = href.trim()
+  if (trimmed.length === 0) return false
+  // 锚点 / 路径相对 / 查询相对：无协议前缀，安全
+  if (/^[#/?]/.test(trimmed)) return true
+  if (trimmed.startsWith('./') || trimmed.startsWith('../')) return true
+  // 协议白名单（大小写不敏感）；其他形如 `javascript:` / `data:` 一律拒绝
+  return /^(https?|mailto|tel|ftp):/i.test(trimmed)
 }
 
 /**

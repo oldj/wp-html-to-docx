@@ -110,6 +110,38 @@ describe('buildIr - 链接与换行', () => {
     })
   })
 
+  it('href 协议白名单：javascript: 被拒，文本保留但不挂 link', () => {
+    const block = ir('<p><a href="javascript:alert(1)">x</a></p>')[0] as {
+      inlines: { kind: string; text?: string; style?: { link?: string } }[]
+    }
+    expect(block.inlines[0]?.text).toBe('x')
+    expect(block.inlines[0]?.style?.link).toBeUndefined()
+  })
+
+  it('href 协议白名单：data: 被拒', () => {
+    const block = ir('<p><a href="data:text/html,evil">x</a></p>')[0] as {
+      inlines: { style?: { link?: string } }[]
+    }
+    expect(block.inlines[0]?.style?.link).toBeUndefined()
+  })
+
+  it('href 大小写不敏感：JaVaScRiPt: 同样被拒', () => {
+    const block = ir('<p><a href="JaVaScRiPt:alert(1)">x</a></p>')[0] as {
+      inlines: { style?: { link?: string } }[]
+    }
+    expect(block.inlines[0]?.style?.link).toBeUndefined()
+  })
+
+  it('href 锚点 / 相对路径 / mailto / tel 都放行', () => {
+    const cases = ['#sec', '/path', './rel', '../up', '?q=1', 'mailto:a@b.com', 'tel:123']
+    for (const href of cases) {
+      const block = ir(`<p><a href="${href}">x</a></p>`)[0] as {
+        inlines: { style?: { link?: string } }[]
+      }
+      expect(block.inlines[0]?.style?.link).toBe(href)
+    }
+  })
+
   it('br 产生 break inline', () => {
     expect(ir('<p>a<br/>b</p>')[0]).toMatchObject({
       inlines: [

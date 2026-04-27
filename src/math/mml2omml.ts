@@ -53,12 +53,35 @@ export async function mathmlToOmml(mathml: string): Promise<string | null> {
     return null
   }
   try {
-    return conv(_ensureMathmlNamespace(mathml))
+    const raw = conv(_ensureMathmlNamespace(mathml))
+    return _escapeOmmlTextContent(raw)
   } catch (err) {
     // 转换异常（极端 MathML 输入）：吞掉并降级，避免整个文档构建失败
     console.warn('wp-html-to-docx: MathML conversion failed, falling back:', err)
     return null
   }
+}
+
+/**
+ * mathml2omml 在生成 `<m:t>` 时不会转义内部文本中的 `<`、`>`、`&`，
+ * 例如 `<mo>&lt;</mo>` 会产出 `<m:t>...<...</m:t>`，整段就是非法 XML，
+ * 后续 `ImportedXmlComponent.fromXmlString` 解析直接抛错。
+ *
+ * 这里对所有 `<m:t ...>...</m:t>` 文本内容补做最小转义。upstream 修好之前，这是必须的兜底。
+ *
+ * 以 `_` 前缀导出供测试直接断言；外部代码不应使用。
+ */
+export function _escapeOmmlTextContent(omml: string): string {
+  // \b 边界防止误匹 <m:type ...> 这类同前缀的标签（regex 否则会从 <m:type 起步）
+  return omml.replace(/<m:t\b([^>]*)>([\s\S]*?)<\/m:t>/g, (_match, attrs: string, content: string) => {
+    // 现版 mml2omml 在 <m:t> 内全部输出原始字符；但负向预查跳过已合法转义的 entity，
+    // 避免未来 mml2omml 改变行为时把 `&amp;` 二次转成 `&amp;amp;`
+    const safe = content
+      .replace(/&(?!(?:amp|lt|gt|quot|apos|#\d+|#x[0-9a-fA-F]+);)/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+    return `<m:t${attrs}>${safe}</m:t>`
+  })
 }
 
 /**

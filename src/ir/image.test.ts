@@ -79,4 +79,29 @@ describe('imageCollector - 外链与 imageResolver', () => {
     })
     expect(ctx.images.size).toBe(0)
   })
+
+  it('多张图并行加载：观察到的最大并发数 > 1', async () => {
+    // 守住「并行而非串行」：resolver 在 release 前一直挂起，
+    // 若实现是顺序 await，永远只会有 1 个 in-flight，testWaitAllInFlight 永远等不到 3
+    let inFlight = 0
+    let maxInFlight = 0
+    let resolveAll: (() => void) | undefined
+    const allInFlight = new Promise<void>((res) => {
+      resolveAll = () => res()
+    })
+    const resolver: ImageResolver = async () => {
+      inFlight += 1
+      maxInFlight = Math.max(maxInFlight, inFlight)
+      if (inFlight >= 3) resolveAll?.()
+      // 等所有图都进入 in-flight 后再统一返回
+      await allInFlight
+      inFlight -= 1
+      return { data: new Uint8Array([0x89, 0x50, 0x4e, 0x47]), mime: 'image/png' }
+    }
+    const html =
+      '<p><img src="https://x.com/a.png"/><img src="https://x.com/b.png"/><img src="https://x.com/c.png"/></p>'
+    const ctx = await buildAndCollect(html, { imageResolver: resolver })
+    expect(maxInFlight).toBe(3)
+    expect(ctx.images.size).toBe(3)
+  })
 })

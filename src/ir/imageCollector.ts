@@ -15,11 +15,15 @@ const DEFAULT_HEIGHT = 150
 export async function collectImages(ir: Block[], ctx: BuildContext): Promise<void> {
   const srcs = new Set<string>()
   collectFromBlocks(ir, srcs)
-  for (const src of srcs) {
-    if (ctx.images.has(src)) continue
-    const asset = await loadImage(src, ctx)
-    if (asset !== null) ctx.images.set(src, asset)
-  }
+  // 并行加载所有外链图片：每张失败由 loadImage 内部 try/catch 隔离，
+  // onUnresolvedImage='error' 时第一个抛错会冒泡（与原顺序行为一致：终止整次构建）
+  const pending = Array.from(srcs)
+    .filter((src) => !ctx.images.has(src))
+    .map(async (src) => {
+      const asset = await loadImage(src, ctx)
+      if (asset !== null) ctx.images.set(src, asset)
+    })
+  await Promise.all(pending)
 }
 
 function collectFromBlocks(blocks: Block[], out: Set<string>): void {
