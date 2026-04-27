@@ -27,6 +27,9 @@ export class BuildContext {
   numbering: NumberingEntry[] = []
   /** src → 已就绪的图片资源；buildIr 后由 collectImages 填充 */
   images = new Map<string, ImageAsset>()
+  /** MathML 原文 → OMML 字符串；buildIr 后由 collectMath 异步填充。
+   * 转换失败 / 依赖缺失时该项缺席，渲染层退回 [math] 占位。 */
+  mathOmml = new Map<string, string>()
   private listSeq = 0
 
   constructor(options: HtmlToDocxOptions) {

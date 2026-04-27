@@ -49,6 +49,10 @@ const html = `
 <span style="font-family: 'Courier New', monospace">等宽字体</span>，
 以及 <strong style="color: blue">蓝色粗体</strong> 的组合。</p>
 
+<h2>数学公式（MathML → OMML）</h2>
+<p>行内：勾股定理 <math><msup><mi>a</mi><mn>2</mn></msup><mo>+</mo><msup><mi>b</mi><mn>2</mn></msup><mo>=</mo><msup><mi>c</mi><mn>2</mn></msup></math>。</p>
+<math display="block"><mfrac><mrow><mo>-</mo><mi>b</mi><mo>±</mo><msqrt><msup><mi>b</mi><mn>2</mn></msup><mo>-</mo><mn>4</mn><mi>a</mi><mi>c</mi></msqrt></mrow><mrow><mn>2</mn><mi>a</mi></mrow></mfrac></math>
+
 <h2>引用</h2>
 <blockquote>
   <p>引用块内的文本，可包含 <strong>样式</strong>。</p>

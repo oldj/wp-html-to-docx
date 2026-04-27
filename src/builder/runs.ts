@@ -9,6 +9,7 @@ import {
 } from 'docx'
 import type { Inline, InlineStyle } from '../types.js'
 import type { BuildContext } from '../ir/buildContext.js'
+import { ommlToImported } from './ommlImport.js'
 
 /**
  * 把 Inline[] 转成 docx 的 ParagraphChild[]
@@ -26,6 +27,19 @@ export function inlinesToRuns(inlines: Inline[], ctx: BuildContext): ParagraphCh
     }
     if (item.kind === 'text') {
       out.push(textRunFor(item.text, item.style))
+      continue
+    }
+    if (item.kind === 'math') {
+      const omml = ctx.mathOmml.get(item.mathml)
+      // ParagraphChild 的类型签名不含 ImportedXmlComponent，但 docx 在序列化时
+      // 只调用每个 child 的 prepForXml，运行时兼容。这里用 unknown 强转规避类型限制。
+      const ic = omml !== undefined ? ommlToImported(omml) : null
+      if (ic !== null) {
+        out.push(ic as unknown as ParagraphChild)
+      } else {
+        // 转换失败 / 依赖缺失：退回 [math] 文本，与改造前行为一致
+        out.push(textRunFor('[math]', {}))
+      }
       continue
     }
     if (item.kind === 'image') {

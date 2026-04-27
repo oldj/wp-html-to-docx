@@ -44,6 +44,14 @@
     "docx": "^9.6.1",
     "parse5": "^8.0.1"
   },
+  "peerDependencies": {
+    "mathml2omml": "^0.5.0"
+  },
+  "peerDependenciesMeta": {
+    "mathml2omml": {
+      "optional": true
+    }
+  },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@types/jsdom": "^28.0.1",
@@ -53,6 +61,7 @@
     "eslint-config-prettier": "^10.1.8",
     "fflate": "^0.8.2",
     "jsdom": "^29.0.2",
+    "mathml2omml": "^0.5.0",
     "prettier": "^3.8.3",
     "tsx": "^4.21.0",
     "typescript": "^6.0.3",

@@ -13,6 +13,7 @@ import { collectInlines, isInlineTag } from './inlineCollector.js'
 import type { BuildContext } from './buildContext.js'
 import { isWhitespaceOnly } from '../utils/html.js'
 import { parseInlineStyle, parseTextAlign } from '../utils/css.js'
+import { serializeNode } from '../utils/serializeNode.js'
 
 const HEADING_LEVELS: Record<string, 1 | 2 | 3 | 4 | 5 | 6> = {
   h1: 1,
@@ -279,30 +280,6 @@ function walkTableCell(node: ParsedElement, ctx: BuildContext): TableCell {
     colSpan,
     rowSpan,
   }
-}
-
-/** 序列化节点为 outerHTML 字符串（用于保留 MathML 原文以便后续转换） */
-function serializeNode(node: ParsedElement): string {
-  // 简化序列化：递归拼接子节点。parse5 也提供 serialize，但 import 增加成本；
-  // 用本地实现保持依赖最小。
-  let inner = ''
-  for (const child of adapter.getChildNodes(node)) {
-    if (isTextNode(child)) {
-      inner += child.value
-      continue
-    }
-    if (isElement(child)) {
-      inner += serializeNode(child)
-    }
-  }
-  const attrs = node.attrs
-    .map((a) => ` ${a.name}="${escapeAttr(a.value)}"`)
-    .join('')
-  return `<${node.tagName}${attrs}>${inner}</${node.tagName}>`
-}
-
-function escapeAttr(value: string): string {
-  return value.replace(/&/g, '&amp;').replace(/"/g, '&quot;')
 }
 
 function parsePositiveInt(value: string | undefined): number | undefined {

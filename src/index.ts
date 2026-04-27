@@ -8,6 +8,7 @@ import { parseHtmlBodyChildren } from './parser/parseHtml.js'
 import { BuildContext } from './ir/buildContext.js'
 import { buildIr } from './ir/buildIr.js'
 import { collectImages } from './ir/imageCollector.js'
+import { collectMath } from './ir/mathCollector.js'
 import { buildDocument } from './builder/buildDocument.js'
 import { pack } from './pack/pack.js'
 import type { HtmlToDocxOptions } from './options.js'
@@ -43,8 +44,9 @@ export async function htmlToDocument(
   const nodes = parseHtmlBodyChildren(html)
   const ctx = new BuildContext(options)
   const ir = buildIr(nodes, ctx)
-  // 异步预加载图片到 ctx.images，渲染层读 ctx 同步出 ImageRun
-  await collectImages(ir, ctx)
+  // 异步阶段：图片加载 + MathML→OMML 转换；都把异步 IO 集中在这里，
+  // 让 builder 阶段保持同步。两者无依赖关系，可并行。
+  await Promise.all([collectImages(ir, ctx), collectMath(ir, ctx)])
   return buildDocument(ir, ctx)
 }
 

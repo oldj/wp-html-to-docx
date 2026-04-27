@@ -19,6 +19,7 @@ import {
   parseFontSizeHalfPt,
   parseInlineStyle,
 } from '../utils/css.js'
+import { serializeNode } from '../utils/serializeNode.js'
 
 /** 内联级标签集合 */
 const INLINE_TAGS = new Set([
@@ -79,8 +80,9 @@ function collectOne(
     return
   }
   if (tag === 'math') {
-    // 行内 math 占位：MVP 不展开 MathML 内部内容，避免污染父段落
-    out.push({ kind: 'text', text: '[math]', style: { ...activeStyle } })
+    // 保留 MathML 原文；后续在 collectMath 阶段异步转 OMML，渲染层据此输出 m:oMath。
+    // 转换失败 / 依赖缺失时，渲染层退回 [math] 占位
+    out.push({ kind: 'math', mathml: serializeNode(node) })
     return
   }
   if (tag === 'img') {

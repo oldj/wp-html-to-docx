@@ -8,7 +8,7 @@ function build(html: string): Block[] {
   return buildIr(parseHtmlBodyChildren(html), new BuildContext({}))
 }
 
-describe('buildIr - math 占位', () => {
+describe('buildIr - math IR', () => {
   it('块级 <math> 产 math IR block，display=inline (默认)', () => {
     const ir = build('<math><mn>1</mn><mo>+</mo><mn>2</mn></math>')
     expect(ir).toHaveLength(1)
@@ -25,17 +25,23 @@ describe('buildIr - math 占位', () => {
     expect(ir[0].display).toBe('block')
   })
 
-  it('p 内的 math 不污染段落文本，转为 [math] 占位', () => {
+  it('p 内的 math 提升为 Inline.kind=math，文本不污染', () => {
     const ir = build('<p>before <math><mn>1</mn></math> after</p>')
     expect(ir[0]?.kind).toBe('paragraph')
     if (ir[0]?.kind !== 'paragraph') throw new Error('expected paragraph')
+    const kinds = ir[0].inlines.map((i) => i.kind)
+    expect(kinds).toContain('math')
     const text = ir[0].inlines
       .map((i) => (i.kind === 'text' ? i.text : ''))
       .join('')
-    expect(text).toContain('[math]')
     expect(text).toContain('before')
     expect(text).toContain('after')
-    // 不应包含原始 mathml 内的 "1"（避免 MathML 内文本泄漏）
+    // MathML 内的 "1" 不应作为段落文本泄漏
     expect(text).not.toMatch(/\b1\b/)
+    // math Inline 应保留原始 MathML 字符串供后续转换
+    const math = ir[0].inlines.find((i) => i.kind === 'math')
+    if (math?.kind !== 'math') throw new Error('expected math inline')
+    expect(math.mathml).toContain('<math')
+    expect(math.mathml).toContain('<mn>1</mn>')
   })
 })

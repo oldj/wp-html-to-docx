@@ -7,11 +7,13 @@ import {
   Paragraph,
   TextRun,
   type FileChild,
+  type ParagraphChild,
 } from 'docx'
 import type { Block, BlockAlign } from '../types.js'
 import type { BuildContext } from '../ir/buildContext.js'
 import { inlinesToRuns } from './runs.js'
 import { tableBlockToFileChild } from './tables.js'
+import { blockOmmlToImported, ommlToImported } from './ommlImport.js'
 
 const ALIGN_MAP: Record<BlockAlign, (typeof AlignmentType)[keyof typeof AlignmentType]> = {
   left: AlignmentType.LEFT,
@@ -87,14 +89,25 @@ function appendBlock(block: Block, out: FileChild[], ctx: BuildContext): void {
     case 'table':
       out.push(tableBlockToFileChild(block, ctx))
       return
-    case 'math':
-      // 占位：渲染为 [math] 文本段。进阶阶段 A 接入 mathml2omml 做真实 OMML 嵌入
-      out.push(
-        new Paragraph({
-          children: [new TextRun({ text: '[math]' })],
-        }),
-      )
+    case 'math': {
+      const omml = ctx.mathOmml.get(block.mathml)
+      // display=block 包 m:oMathPara；display=inline（极罕见出现在块级 IR 上）
+      // 也直接用 m:oMath 插入段落
+      const ic =
+        omml !== undefined
+          ? block.display === 'block'
+            ? blockOmmlToImported(omml)
+            : ommlToImported(omml)
+          : null
+      if (ic !== null) {
+        // ImportedXmlComponent 不在 ParagraphChild 类型联合内，但运行时兼容
+        out.push(new Paragraph({ children: [ic as unknown as ParagraphChild] }))
+      } else {
+        // 转换失败 / 依赖缺失：退回 [math] 占位段
+        out.push(new Paragraph({ children: [new TextRun({ text: '[math]' })] }))
+      }
       return
+    }
     default:
       return
   }

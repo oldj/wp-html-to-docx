@@ -25,11 +25,13 @@ export type InlineStyle = {
   fontFamily?: string
 }
 
-/** 内联节点：组合后映射为 TextRun / ImageRun / ExternalHyperlink */
+/** 内联节点：组合后映射为 TextRun / ImageRun / ExternalHyperlink / 行内 OMML */
 export type Inline =
   | { kind: 'text'; text: string; style: InlineStyle }
   | { kind: 'break' }
   | { kind: 'image'; src: string; alt?: string; style: InlineStyle }
+  /** 行内 <math>：原文 MathML，转换在 collectMath 阶段写入 ctx.mathOmml */
+  | { kind: 'math'; mathml: string }
 
 /** 列表层级引用，由 BuildContext.registerList 注册并填入 numbering 配置 */
 export type ListRef = {
