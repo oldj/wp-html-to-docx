@@ -54,6 +54,35 @@ describe('inline <math> → 段内 <m:oMath>', () => {
   })
 })
 
+describe('B1 回归：math 与同段文本不被切块', () => {
+  it('<td>x = <math>1</math></td> 单元格内只产 1 个段落含文本与 m:oMath', async () => {
+    const xml = await getDocXml(
+      '<table><tr><td>x = <math><mn>1</mn></math></td></tr></table>',
+    )
+    // 在 <w:tc> 范围里精确数 <w:p>，应只有 1 个
+    const tcMatch = xml.match(/<w:tc>[\s\S]*?<\/w:tc>/)
+    expect(tcMatch).not.toBeNull()
+    const cellXml = tcMatch?.[0] ?? ''
+    const paragraphCount = (cellXml.match(/<w:p\b/g) ?? []).length
+    expect(paragraphCount).toBe(1)
+    // 同一段落内既有文本 run 又有 m:oMath
+    expect(cellXml).toMatch(/<w:t[^>]*>x = <\/w:t>/)
+    expect(cellXml).toContain('<m:oMath')
+  })
+
+  it('<div>see <math>x</math> here</div> 不切段', async () => {
+    const xml = await getDocXml('<div>see <math><mi>x</mi></math> here</div>')
+    // 应只有一个段落，文本 + 行内 math
+    const bodyMatch = xml.match(/<w:body>([\s\S]*?)<w:sectPr/)
+    const body = bodyMatch?.[1] ?? ''
+    const paragraphCount = (body.match(/<w:p\b/g) ?? []).length
+    expect(paragraphCount).toBe(1)
+    expect(body).toContain('see ')
+    expect(body).toContain('<m:oMath')
+    expect(body).toContain(' here')
+  })
+})
+
 describe('docx <undefined> 包裹被正确剥离', () => {
   it('document.xml 不应出现 ImportedXmlComponent 的 <undefined> 包装', async () => {
     const xml = await getDocXml('<math display="block"><mn>1</mn></math>')

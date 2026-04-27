@@ -59,7 +59,9 @@ function walkBlocks(
     if (!isElement(node)) continue
 
     const tag = node.tagName
-    if (isInlineTag(tag)) {
+    // <math> 默认按 phrasing content 处理（与 HTML5 一致），与前后文本同段；
+    // 仅 display="block" 时才升级到块级，走下面的 'math' case 产独立段
+    if (isInlineTag(tag) || (tag === 'math' && getAttr(node, 'display') !== 'block')) {
       inlineBuffer.push(node)
       continue
     }
