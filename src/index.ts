@@ -28,6 +28,7 @@ export type {
 
 export type {
   Block,
+  BlockAlign,
   Inline,
   InlineStyle,
   ListRef,

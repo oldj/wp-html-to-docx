@@ -8,9 +8,17 @@ import {
   getAttr,
   isElement,
   isTextNode,
+  type ParsedElement,
   type ParsedNode,
 } from '../parser/parseHtml.js'
 import { collapseWhitespace } from '../utils/html.js'
+import {
+  isBoldWeight,
+  parseColor,
+  parseFontFamily,
+  parseFontSizeHalfPt,
+  parseInlineStyle,
+} from '../utils/css.js'
 
 /** 内联级标签集合 */
 const INLINE_TAGS = new Set([
@@ -91,35 +99,72 @@ function collectOne(
   }
 }
 
-function applyTagStyle(
-  tag: string,
-  base: InlineStyle,
-  el: import('../parser/parseHtml.js').ParsedElement,
-): InlineStyle {
+function applyTagStyle(tag: string, base: InlineStyle, el: ParsedElement): InlineStyle {
+  // 第一层：标签语义带来的固定样式（<strong> = bold，<em> = italic 等）
+  let style = base
   switch (tag) {
     case 'strong':
     case 'b':
-      return { ...base, bold: true }
+      style = { ...style, bold: true }
+      break
     case 'em':
     case 'i':
-      return { ...base, italic: true }
+      style = { ...style, italic: true }
+      break
     case 'u':
-      return { ...base, underline: true }
+      style = { ...style, underline: true }
+      break
     case 's':
     case 'strike':
     case 'del':
-      return { ...base, strike: true }
+      style = { ...style, strike: true }
+      break
     case 'code':
-      return { ...base, code: true }
+      style = { ...style, code: true }
+      break
     case 'a': {
       const href = getAttr(el, 'href')
-      return href ? { ...base, link: href } : { ...base }
+      if (href) style = { ...style, link: href }
+      break
     }
-    case 'span':
-    default:
-      // 未知或纯包装标签：透传样式
-      return base
+    // span / mark / sub / sup 等：仅透传，由 inline style 决定外观
   }
+  // 第二层：inline `style` 属性按 plan.md「进阶 B」范围内叠加
+  return mergeInlineCss(style, getAttr(el, 'style'))
+}
+
+/**
+ * 把元素 `style` 属性中支持的字段叠加到当前 InlineStyle 上。
+ * 设计原则：仅做加法（增加样式），不做减法（不会把 normal 重置 bold）。
+ * 这样实现成本低，且符合「不做完整 cascade」的项目定位。
+ */
+function mergeInlineCss(base: InlineStyle, source: string | undefined): InlineStyle {
+  if (source === undefined) return base
+  const decls = parseInlineStyle(source)
+  if (Object.keys(decls).length === 0) return base
+  let style = base
+  if (isBoldWeight(decls['font-weight'])) style = { ...style, bold: true }
+  if (decls['font-style']?.toLowerCase() === 'italic') style = { ...style, italic: true }
+  // text-decoration 可能包含多个值，如 "underline line-through"
+  const deco = decls['text-decoration-line'] ?? decls['text-decoration']
+  if (deco !== undefined) {
+    const tokens = deco.toLowerCase().split(/\s+/)
+    if (tokens.includes('underline')) style = { ...style, underline: true }
+    if (tokens.includes('line-through')) style = { ...style, strike: true }
+  }
+  const color = parseColor(decls['color'])
+  if (color !== undefined) style = { ...style, color }
+  // background 简写或 background-color 都接受；只取首个 token 解析为颜色
+  const bgRaw = decls['background-color'] ?? decls['background']
+  if (bgRaw !== undefined) {
+    const bg = parseColor(bgRaw.split(/\s+/)[0])
+    if (bg !== undefined) style = { ...style, bgColor: bg }
+  }
+  const fontSize = parseFontSizeHalfPt(decls['font-size'])
+  if (fontSize !== undefined) style = { ...style, fontSize }
+  const fontFamily = parseFontFamily(decls['font-family'])
+  if (fontFamily !== undefined) style = { ...style, fontFamily }
+  return style
 }
 
 /**
@@ -150,6 +195,10 @@ function sameStyle(a: InlineStyle, b: InlineStyle): boolean {
     !!a.underline === !!b.underline &&
     !!a.strike === !!b.strike &&
     !!a.code === !!b.code &&
-    (a.link ?? '') === (b.link ?? '')
+    (a.link ?? '') === (b.link ?? '') &&
+    (a.color ?? '') === (b.color ?? '') &&
+    (a.bgColor ?? '') === (b.bgColor ?? '') &&
+    (a.fontSize ?? 0) === (b.fontSize ?? 0) &&
+    (a.fontFamily ?? '') === (b.fontFamily ?? '')
   )
 }

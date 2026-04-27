@@ -1,6 +1,12 @@
 // Inline → docx 运行节点（TextRun / ExternalHyperlink+TextRun / ImageRun）
 
-import { ExternalHyperlink, ImageRun, TextRun, type ParagraphChild } from 'docx'
+import {
+  ExternalHyperlink,
+  ImageRun,
+  ShadingType,
+  TextRun,
+  type ParagraphChild,
+} from 'docx'
 import type { Inline, InlineStyle } from '../types.js'
 import type { BuildContext } from '../ir/buildContext.js'
 
@@ -51,6 +57,8 @@ export function inlinesToRuns(inlines: Inline[], ctx: BuildContext): ParagraphCh
 }
 
 function textRunFor(text: string, style: InlineStyle): ParagraphChild {
+  // 字体优先级：用户 style="font-family: ..." > <code> 默认 Consolas > 不指定
+  const font = style.fontFamily ?? (style.code ? 'Consolas' : undefined)
   const run = new TextRun({
     text,
     bold: style.bold,
@@ -58,7 +66,15 @@ function textRunFor(text: string, style: InlineStyle): ParagraphChild {
     underline: style.underline ? {} : undefined,
     strike: style.strike,
     style: style.code ? 'CodeChar' : undefined,
-    font: style.code ? 'Consolas' : undefined,
+    font,
+    color: style.color,
+    size: style.fontSize,
+    // 用 CLEAR（无图案）+ fill 表达「纯背景色」。SOLID 的语义是
+    // 前景色 (color) 完全覆盖 fill，会得到纯前景色而非期望的填充色。
+    shading:
+      style.bgColor !== undefined
+        ? { type: ShadingType.CLEAR, fill: style.bgColor }
+        : undefined,
   })
   if (style.link) {
     return new ExternalHyperlink({

@@ -1,6 +1,6 @@
 // DOM → IR walker
 
-import type { Block, TableCell, TableRow } from '../types.js'
+import type { Block, BlockAlign, TableCell, TableRow } from '../types.js'
 import {
   adapter,
   getAttr,
@@ -12,6 +12,7 @@ import {
 import { collectInlines, isInlineTag } from './inlineCollector.js'
 import type { BuildContext } from './buildContext.js'
 import { isWhitespaceOnly } from '../utils/html.js'
+import { parseInlineStyle, parseTextAlign } from '../utils/css.js'
 
 const HEADING_LEVELS: Record<string, 1 | 2 | 3 | 4 | 5 | 6> = {
   h1: 1,
@@ -69,6 +70,7 @@ function walkBlocks(
         kind: 'heading',
         level: heading,
         inlines: collectInlines(adapter.getChildNodes(node)),
+        align: blockAlign(node),
       })
       continue
     }
@@ -78,6 +80,7 @@ function walkBlocks(
         out.push({
           kind: 'paragraph',
           inlines: collectInlines(adapter.getChildNodes(node)),
+          align: blockAlign(node),
         })
         continue
       case 'ul':
@@ -89,6 +92,7 @@ function walkBlocks(
         out.push({
           kind: 'paragraph',
           inlines: collectInlines(adapter.getChildNodes(node)),
+          align: blockAlign(node),
         })
         continue
       case 'blockquote':
@@ -194,10 +198,17 @@ function walkListItem(
       kind: 'list-item',
       inlines,
       ref: { reference: frame.reference, level: frame.level },
+      align: blockAlign(node),
     },
     ...blockTail,
   ]
   return out
+}
+
+/** 从块级元素的 inline `style="text-align: ..."` 取出对齐值 */
+function blockAlign(el: ParsedElement): BlockAlign | undefined {
+  const decls = parseInlineStyle(getAttr(el, 'style'))
+  return parseTextAlign(decls['text-align'])
 }
 
 /**

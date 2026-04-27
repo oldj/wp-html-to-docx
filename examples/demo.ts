@@ -39,6 +39,16 @@ const html = `
   </tbody>
 </table>
 
+<h2 style="text-align: center">居中标题（text-align）</h2>
+
+<p style="text-align: right">本段落右对齐。</p>
+
+<p>下面演示 <span style="color: #d33">红色文本</span>、
+<span style="background-color: yellow">黄色高亮</span>、
+<span style="font-size: 18pt">大号字</span>、
+<span style="font-family: 'Courier New', monospace">等宽字体</span>，
+以及 <strong style="color: blue">蓝色粗体</strong> 的组合。</p>
+
 <h2>引用</h2>
 <blockquote>
   <p>引用块内的文本，可包含 <strong>样式</strong>。</p>

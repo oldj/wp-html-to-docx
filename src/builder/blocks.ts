@@ -1,10 +1,30 @@
 // Block → docx 节点
 
-import { BorderStyle, HeadingLevel, Paragraph, TextRun, type FileChild } from 'docx'
-import type { Block } from '../types.js'
+import {
+  AlignmentType,
+  BorderStyle,
+  HeadingLevel,
+  Paragraph,
+  TextRun,
+  type FileChild,
+} from 'docx'
+import type { Block, BlockAlign } from '../types.js'
 import type { BuildContext } from '../ir/buildContext.js'
 import { inlinesToRuns } from './runs.js'
 import { tableBlockToFileChild } from './tables.js'
+
+const ALIGN_MAP: Record<BlockAlign, (typeof AlignmentType)[keyof typeof AlignmentType]> = {
+  left: AlignmentType.LEFT,
+  right: AlignmentType.RIGHT,
+  center: AlignmentType.CENTER,
+  justify: AlignmentType.JUSTIFIED,
+}
+
+function toAlignment(
+  align: BlockAlign | undefined,
+): (typeof AlignmentType)[keyof typeof AlignmentType] | undefined {
+  return align !== undefined ? ALIGN_MAP[align] : undefined
+}
 
 const HEADING_MAP = {
   1: HeadingLevel.HEADING_1,
@@ -24,12 +44,18 @@ export function blocksToChildren(blocks: Block[], ctx: BuildContext): FileChild[
 function appendBlock(block: Block, out: FileChild[], ctx: BuildContext): void {
   switch (block.kind) {
     case 'paragraph':
-      out.push(new Paragraph({ children: inlinesToRuns(block.inlines, ctx) }))
+      out.push(
+        new Paragraph({
+          alignment: toAlignment(block.align),
+          children: inlinesToRuns(block.inlines, ctx),
+        }),
+      )
       return
     case 'heading':
       out.push(
         new Paragraph({
           heading: HEADING_MAP[block.level],
+          alignment: toAlignment(block.align),
           children: inlinesToRuns(block.inlines, ctx),
         }),
       )
@@ -38,6 +64,7 @@ function appendBlock(block: Block, out: FileChild[], ctx: BuildContext): void {
       out.push(
         new Paragraph({
           numbering: { reference: block.ref.reference, level: block.ref.level },
+          alignment: toAlignment(block.align),
           children: inlinesToRuns(block.inlines, ctx),
         }),
       )
@@ -81,6 +108,7 @@ function appendBlockquote(block: Block, out: FileChild[], ctx: BuildContext): vo
         border: {
           left: { style: BorderStyle.SINGLE, size: 12, color: 'CCCCCC', space: 8 },
         },
+        alignment: toAlignment(block.align),
         children: inlinesToRuns(block.inlines, ctx),
       }),
     )
