@@ -61,6 +61,32 @@ describe('buildIr - 列表', () => {
       inlines: [{ kind: 'text', text: 'x', style: { bold: true } }],
     })
   })
+
+  it('li 内多个块级子节点展平时保留文本边界', () => {
+    const { ir } = build('<ul><li><p>one</p><p>two</p></li></ul>')
+    expect(ir[0]).toMatchObject({
+      kind: 'list-item',
+      inlines: [{ kind: 'text', text: 'one two', style: {} }],
+    })
+  })
+
+  it('li 内块级 + 紧跟裸文本时保留文本边界', () => {
+    // <p>foo</p>bar 这种「块级后接裸文本」的边界，曾被遗漏导致拼成 "foobar"
+    const { ir } = build('<ul><li><p>foo</p>bar</li></ul>')
+    expect(ir[0]).toMatchObject({
+      kind: 'list-item',
+      inlines: [{ kind: 'text', text: 'foo bar', style: {} }],
+    })
+  })
+
+  it('li 内裸文本 + 紧跟块级时保留文本边界', () => {
+    // 反向边界：foo<p>bar</p>，验证两端任一为块级都会插入分隔
+    const { ir } = build('<ul><li>foo<p>bar</p></li></ul>')
+    expect(ir[0]).toMatchObject({
+      kind: 'list-item',
+      inlines: [{ kind: 'text', text: 'foo bar', style: {} }],
+    })
+  })
 })
 
 describe('buildIr - blockquote / hr / pre', () => {

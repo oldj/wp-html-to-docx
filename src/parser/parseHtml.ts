@@ -13,6 +13,13 @@ export type ParsedDocument = DefaultTreeAdapterMap['document']
 export const adapter = defaultTreeAdapter
 
 /**
+ * 创建文本节点的工厂。封装 adapter 的实现细节，便于将来切换 tree-adapter 时只改这一处。
+ */
+export function createTextNode(value: string): ParsedTextNode {
+  return adapter.createTextNode(value)
+}
+
+/**
  * 解析 HTML 字符串。优先把内容解析为 fragment（更宽松、不强求 <html><body> 包裹），
  * 若用户传入完整文档则正确识别。这里统一返回 body 等价的 children 列表。
  */

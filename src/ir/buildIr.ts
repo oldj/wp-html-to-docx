@@ -3,6 +3,7 @@
 import type { Block, BlockAlign, TableCell, TableRow } from '../types.js'
 import {
   adapter,
+  createTextNode,
   getAttr,
   isElement,
   isTextNode,
@@ -216,6 +217,15 @@ function walkListItem(
 ): Block[] {
   const inlineNodes: ParsedNode[] = []
   const blockTail: Block[] = []
+  // 跟踪上一次推入 inlineNodes 的内容是否来自「块级展平」。
+  // 当前后两项中至少一个是块级展平时，需要在中间插一个空格保留文本边界，
+  // 否则 <p>foo</p>bar / <p>one</p><p>two</p> 等组合会被拼成无分隔的连串文本
+  let lastWasBlock = false
+  const pushBoundary = (currentIsBlock: boolean): void => {
+    if ((lastWasBlock || currentIsBlock) && inlineNodes.length > 0) {
+      inlineNodes.push(createTextNode(' '))
+    }
+  }
 
   for (const child of adapter.getChildNodes(node)) {
     if (isElement(child)) {
@@ -228,17 +238,23 @@ function walkListItem(
       // math / page-break 是 phrasing 元素，整体保留以便 collectInlines 输出 math/pageBreak Inline
       // （否则会落到下面「展平包装」分支，导致 MathML 内文本泄漏或 page-break 丢失）
       if (tag === 'math' || tag === 'page-break') {
+        pushBoundary(false)
         inlineNodes.push(child)
+        lastWasBlock = false
         continue
       }
       // 其它块级（如 p / div）：把其内联子节点展平到当前 li
       // 这一步保守地避免在 li 内引入嵌套段落，破坏列表项的连贯性
       if (!isInlineTag(tag)) {
+        pushBoundary(true)
         inlineNodes.push(...adapter.getChildNodes(child))
+        lastWasBlock = true
         continue
       }
     }
+    pushBoundary(false)
     inlineNodes.push(child)
+    lastWasBlock = false
   }
 
   const inlines = collectInlines(inlineNodes)

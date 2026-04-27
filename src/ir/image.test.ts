@@ -82,7 +82,7 @@ describe('imageCollector - 外链与 imageResolver', () => {
 
   it('多张图并行加载：观察到的最大并发数 > 1', async () => {
     // 守住「并行而非串行」：resolver 在 release 前一直挂起，
-    // 若实现是顺序 await，永远只会有 1 个 in-flight，testWaitAllInFlight 永远等不到 3
+    // 若实现是顺序 await，永远只会有 1 个 in-flight，allInFlight 永远等不到 3
     let inFlight = 0
     let maxInFlight = 0
     let resolveAll: (() => void) | undefined
