@@ -83,6 +83,21 @@ describe('B1 回归：math 与同段文本不被切块', () => {
   })
 })
 
+describe('B2 回归：<math> 在 <li> 内不被吞掉，MathML 内文本不泄漏', () => {
+  it('list-item 内的行内 math 保留为 m:oMath，且 mn 内的字符不作为段落文本输出', async () => {
+    const xml = await getDocXml('<ul><li>see <math><mn>1</mn></math> end</li></ul>')
+    expect(xml).toContain('<m:oMath')
+    // 周围文本仍在
+    expect(xml).toContain('see ')
+    expect(xml).toContain(' end')
+    // 段落 w:t 不应包含 MathML 内的「1」（避免 see 1 end 这种泄漏）
+    const wTexts = xml.match(/<w:t[^>]*>[^<]*<\/w:t>/g) ?? []
+    for (const t of wTexts) {
+      expect(t).not.toMatch(/^<w:t[^>]*>1<\/w:t>$/)
+    }
+  })
+})
+
 describe('docx <undefined> 包裹被正确剥离', () => {
   it('document.xml 不应出现 ImportedXmlComponent 的 <undefined> 包装', async () => {
     const xml = await getDocXml('<math display="block"><mn>1</mn></math>')

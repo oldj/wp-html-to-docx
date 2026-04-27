@@ -222,6 +222,12 @@ function walkListItem(
         blockTail.push(...walkList(child, tag === 'ol', ctx, listStack))
         continue
       }
+      // math / page-break 是 phrasing 元素，整体保留以便 collectInlines 输出 math/pageBreak Inline
+      // （否则会落到下面「展平包装」分支，导致 MathML 内文本泄漏或 page-break 丢失）
+      if (tag === 'math' || tag === 'page-break') {
+        inlineNodes.push(child)
+        continue
+      }
       // 其它块级（如 p / div）：把其内联子节点展平到当前 li
       // 这一步保守地避免在 li 内引入嵌套段落，破坏列表项的连贯性
       if (!isInlineTag(tag)) {

@@ -115,6 +115,19 @@ describe('CSS page-break-before / page-break-after 与 CSS3 break-before / break
   })
 })
 
+describe('B1 回归：<page-break> 在 <li> 内不被丢弃', () => {
+  it('list-item 内的 page-break 保留为段内 PageBreak run，文本不丢', async () => {
+    const xml = await getDocXml('<ul><li>foo<page-break/>bar</li></ul>')
+    expect(countPageBreaks(xml)).toBe(1)
+    // foo 与 bar 都还在
+    expect(xml).toContain('foo')
+    expect(xml).toContain('bar')
+    // 仅 1 个 list-item 段落
+    const body = xml.match(/<w:body>([\s\S]*?)<w:sectPr/)?.[1] ?? ''
+    expect((body.match(/<w:p\b/g) ?? []).length).toBe(1)
+  })
+})
+
 describe('PageBreak 渲染为 <w:br w:type="page"/>', () => {
   it('OOXML 输出 w:type="page"', async () => {
     const xml = await getDocXml('<page-break>')
