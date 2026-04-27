@@ -28,11 +28,23 @@ describe('builder XML - 列表', () => {
     expect(numbering).toMatch(/w:val="decimal"/)
   })
 
-  it('嵌套 ul：两个 li 引用同一 numId 但 ilvl 不同', async () => {
+  it('嵌套 ul：两个 li 引用同一 numId，ilvl 0 与 1', async () => {
     const { document } = await getDocs('<ul><li>a<ul><li>b</li></ul></li></ul>')
-    // 期望存在 ilvl 0 与 ilvl 1
-    expect(document).toMatch(/<w:ilvl[^>]*w:val="0"/)
-    expect(document).toMatch(/<w:ilvl[^>]*w:val="1"/)
+    // 抓出每个 numPr 块里的 numId 与 ilvl，要求两层共享同一个 numId
+    // 这才能反映「嵌套同类型 list 复用 reference」的真实意图——只看 ilvl 0/1 都出现
+    // 的旧断言在新建第二个 reference 但碰巧两层 ilvl 不同的实现下也会通过
+    const numPrBlocks = [...document.matchAll(/<w:numPr>([\s\S]*?)<\/w:numPr>/g)].map(
+      (m) => m[1] ?? '',
+    )
+    expect(numPrBlocks).toHaveLength(2)
+    const parsed = numPrBlocks.map((b) => ({
+      ilvl: /<w:ilvl[^>]*w:val="(\d+)"/.exec(b)?.[1],
+      numId: /<w:numId[^>]*w:val="(\d+)"/.exec(b)?.[1],
+    }))
+    expect(parsed[0]?.ilvl).toBe('0')
+    expect(parsed[1]?.ilvl).toBe('1')
+    expect(parsed[0]?.numId).toBeDefined()
+    expect(parsed[0]?.numId).toBe(parsed[1]?.numId)
   })
 })
 

@@ -44,10 +44,6 @@ describe('Document metadata 写入 docProps/core.xml', () => {
     expect(xml).toContain('Alice')
     expect(xml).toContain('A test document.')
   })
-
-  it('未配置时各字段在 core.xml 中为空或默认（不抛错）', async () => {
-    const u8 = await htmlToDocx('<p>x</p>')
-    const files = unzipSync(u8)
-    expect(files['docProps/core.xml']).toBeDefined()
-  })
+  // 「未配置时不抛错」用例已删除：docx 总是写 core.xml，仅 toBeDefined 永远成立，
+  // 不能反映任何意图；其他用例隐式覆盖了「不传 metadata 也能正常构建文档」
 })

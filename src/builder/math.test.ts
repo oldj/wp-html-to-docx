@@ -32,12 +32,8 @@ describe('block <math display="block"> → <m:oMathPara>', () => {
     // 块级公式不应再出现 [math] 占位
     expect(xml).not.toContain('[math]')
   })
-
-  it('parse5 丢失的 xmlns 在转换前自动补回，不影响输出', async () => {
-    // 注意：HTML 里写的 <math> 通常没带 xmlns；流程内部应自动补
-    const xml = await getDocXml('<math display="block"><mn>42</mn></math>')
-    expect(xml).toContain('<m:oMathPara')
-  })
+  // xmlns 补全的语义断言由 mml2omml.test.ts._ensureMathmlNamespace 直接覆盖；
+  // builder 层只关心「没有 xmlns 的输入也能完成转换」，由上面的用例与下面的行内用例共同体现
 })
 
 describe('inline <math> → 段内 <m:oMath>', () => {
@@ -105,12 +101,6 @@ describe('docx <undefined> 包裹被正确剥离', () => {
   })
 })
 
-describe('同一段 MathML 多处出现：转换只跑一次（行为正确即可）', () => {
-  it('两个一样的行内公式都成功嵌入', async () => {
-    const same = '<math><mn>7</mn></math>'
-    const xml = await getDocXml(`<p>${same}</p><p>${same}</p>`)
-    // 两段段落里都应该有 m:oMath
-    const matches = xml.match(/<m:oMath\b/g) ?? []
-    expect(matches.length).toBeGreaterThanOrEqual(2)
-  })
-})
+// 同一段 MathML 出现多次时的「真正去重」断言（ctx.mathOmml.size === 1）
+// 由 ir/mathCollector.test.ts 直接验证；builder 层只能间接看到 OMML 出现次数，
+// 不足以反映「转换只跑一次」

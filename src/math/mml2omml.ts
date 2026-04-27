@@ -53,7 +53,7 @@ export async function mathmlToOmml(mathml: string): Promise<string | null> {
     return null
   }
   try {
-    return conv(ensureMathmlNamespace(mathml))
+    return conv(_ensureMathmlNamespace(mathml))
   } catch (err) {
     // 转换异常（极端 MathML 输入）：吞掉并降级，避免整个文档构建失败
     console.warn('wp-html-to-docx: MathML conversion failed, falling back:', err)
@@ -64,8 +64,10 @@ export async function mathmlToOmml(mathml: string): Promise<string | null> {
 /**
  * 给根 <math> 元素补上 xmlns 命名空间（若缺失）。
  * 简单的字符串替换：定位首个 <math 标记，检查 xmlns 是否已在其属性段内。
+ *
+ * 以 `_` 前缀导出供测试直接断言（与 `_resetForTest` 同一约定）；外部代码不应使用。
  */
-function ensureMathmlNamespace(mathml: string): string {
+export function _ensureMathmlNamespace(mathml: string): string {
   const match = /<math\b([^>]*)>/i.exec(mathml)
   if (!match) return mathml
   const attrs = match[1] ?? ''
