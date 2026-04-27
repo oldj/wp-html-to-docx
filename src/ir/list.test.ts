@@ -87,6 +87,31 @@ describe('buildIr - 列表', () => {
       inlines: [{ kind: 'text', text: 'foo bar', style: {} }],
     })
   })
+
+  it('嵌套 ul 被 div 包裹时仍保留列表语义', () => {
+    // 防回归：曾经 <li><div><ul>...</ul></div></li> 会被把 <ul> 当 inline 文本展平
+    const { ir, ctx } = build('<ul><li><div><ul><li>x</li></ul></div></li></ul>')
+    // 外层 li（空内容）+ 内层 li（'x'）
+    expect(ir).toHaveLength(2)
+    expect(ir[0]).toMatchObject({ kind: 'list-item', ref: { level: 0 } })
+    expect(ir[1]).toMatchObject({ kind: 'list-item', ref: { level: 1 } })
+    if (ir[1]?.kind !== 'list-item') throw new Error('expected list-item')
+    expect(ir[1].inlines).toEqual([{ kind: 'text', text: 'x', style: {} }])
+    // 嵌套层级被正确注册（外层 + 内层共用同 reference 但不同 level）
+    expect(ctx.numbering).toHaveLength(1)
+  })
+
+  it('嵌套 ul 被 div 包裹 + 同级文本：嵌套列表抽出，文本仍在 li.inlines', () => {
+    const { ir } = build('<ul><li>foo<div><ul><li>x</li></ul></div>baz</li></ul>')
+    // 外层 li 含 'foo baz'，内层 li 含 'x'
+    expect(ir).toHaveLength(2)
+    if (ir[0]?.kind !== 'list-item') throw new Error('expected list-item')
+    // 'foo' 在 div 之前 + 'baz' 在 div 之后，中间分别由 block-boundary 插入空格
+    expect(ir[0].inlines).toEqual([{ kind: 'text', text: 'foo baz', style: {} }])
+    if (ir[1]?.kind !== 'list-item') throw new Error('expected nested list-item')
+    expect(ir[1].inlines).toEqual([{ kind: 'text', text: 'x', style: {} }])
+    expect(ir[1].ref.level).toBe(1)
+  })
 })
 
 describe('buildIr - blockquote / hr / pre', () => {

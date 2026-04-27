@@ -51,17 +51,27 @@ export function inlinesToRuns(inlines: Inline[], ctx: BuildContext): ParagraphCh
     if (item.kind === 'image') {
       const asset = ctx.images.get(item.src)
       if (asset !== undefined) {
-        out.push(
-          new ImageRun({
-            type: asset.type,
-            data: asset.data,
-            transformation: { width: asset.width, height: asset.height },
-            altText:
-              item.alt !== undefined && item.alt.length > 0
-                ? { title: item.alt, description: item.alt, name: item.alt }
-                : undefined,
-          }),
-        )
+        const imageRun = new ImageRun({
+          type: asset.type,
+          data: asset.data,
+          transformation: { width: asset.width, height: asset.height },
+          altText:
+            item.alt !== undefined && item.alt.length > 0
+              ? { title: item.alt, description: item.alt, name: item.alt }
+              : undefined,
+        })
+        // <a href><img></a>：当 image inline 携带 link 时，套一层 ExternalHyperlink，
+        // 否则图片在 docx 中不可点击（IR 已正确写入 style.link，但 ImageRun 自身不消费）
+        if (item.style.link) {
+          out.push(
+            new ExternalHyperlink({
+              link: item.style.link,
+              children: [imageRun],
+            }),
+          )
+        } else {
+          out.push(imageRun)
+        }
         continue
       }
       // 未加载（resolver 未配 / 加载失败 / 策略 skip）
@@ -79,13 +89,15 @@ export function inlinesToRuns(inlines: Inline[], ctx: BuildContext): ParagraphCh
 function textRunFor(text: string, style: InlineStyle): ParagraphChild {
   // 字体优先级：用户 style="font-family: ..." > <code> 默认 Consolas > 不指定
   const font = style.fontFamily ?? (style.code ? 'Consolas' : undefined)
+  // 注：曾经写过 `style: 'CodeChar'` 来给行内代码挂字符样式，但 CodeChar 从未在
+  // buildStyles 注册，Word 直接忽略 → 无视觉效果，仅靠下方 font='Consolas' 兜底。
+  // 不挂未注册的样式 ID，避免误导读者「这里有样式可挂」。
   const run = new TextRun({
     text,
     bold: style.bold,
     italics: style.italic,
     underline: style.underline ? {} : undefined,
     strike: style.strike,
-    style: style.code ? 'CodeChar' : undefined,
     font,
     color: style.color,
     size: style.fontSize,

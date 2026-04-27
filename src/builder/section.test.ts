@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { unzipSync, strFromU8 } from 'fflate'
 import { htmlToDocx } from '../index.js'
 import type { HtmlToDocxOptions } from '../options.js'
@@ -43,6 +43,23 @@ describe('section - 纸张尺寸与方向', () => {
     expect(document).toMatch(/<w:pgSz[^>]*w:w="1440"/)
     expect(document).toMatch(/<w:pgSz[^>]*w:h="2880"/)
   })
+
+  it('未知 PaperSize 字符串：降级 A4 而非 NPE', async () => {
+    // 防回归：曾经 page.size: 'A6' 这种 JS 调用方传入未在联合中的字符串会让 PAPER_MM[size]=undefined
+    // 触发 NPE。现在应给出 warn + fallback A4
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    try {
+      const { document } = await unpack('<p>x</p>', {
+        page: { size: 'A6' as never },
+      })
+      // A4 portrait 尺寸
+      expect(document).toMatch(/<w:pgSz[^>]*w:w="11906"/)
+      expect(document).toMatch(/<w:pgSz[^>]*w:h="16838"/)
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('unknown PaperSize'))
+    } finally {
+      warn.mockRestore()
+    }
+  })
 })
 
 describe('section - 页边距', () => {
@@ -58,6 +75,28 @@ describe('section - 页边距', () => {
     })
     expect(document).toMatch(/<w:pgMar[^>]*w:top="2880"/) // 50.8mm = 2 in = 2880 twip
     expect(document).toMatch(/<w:pgMar[^>]*w:left="720"/) // 12.7mm = 0.5 in
+  })
+
+  it('非法 margin（NaN / 负数 / 字符串）：回退默认值，不污染 OOXML', async () => {
+    // 防回归：margin 字段曾被原样 toTwip，NaN 让 Word 报「文件已损坏」、负值让 Word 拒开
+    const { document } = await unpack('<p>x</p>', {
+      page: {
+        margin: {
+          top: NaN,
+          left: -10,
+          right: 'oops' as never,
+          bottom: 25.4, // 合法：保留
+        },
+      },
+    })
+    // top / left / right 应回退到默认 25.4mm = 1440 twip；bottom 也是 1440
+    expect(document).toMatch(/<w:pgMar[^>]*w:top="1440"/)
+    expect(document).toMatch(/<w:pgMar[^>]*w:left="1440"/)
+    expect(document).toMatch(/<w:pgMar[^>]*w:right="1440"/)
+    expect(document).toMatch(/<w:pgMar[^>]*w:bottom="1440"/)
+    // 负值 / NaN 不应出现在生成的 XML 中
+    expect(document).not.toMatch(/w:(top|left|right|bottom)="-/)
+    expect(document).not.toContain('NaN')
   })
 })
 

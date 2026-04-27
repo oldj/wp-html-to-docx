@@ -29,7 +29,7 @@ import {
   type PageNumberOptions,
   type PageNumberPosition,
 } from '../options.js'
-import { resolvePageSizeTwip, toTwip } from '../utils/units.js'
+import { resolvePageSizeTwip, safeNonNegativeInt, safeTwip } from '../utils/units.js'
 
 type Slot = 'left' | 'center' | 'right'
 type Region = 'header' | 'footer'
@@ -97,13 +97,16 @@ function resolveSize(
 function resolveMargin(options: HtmlToDocxOptions): IPageMarginAttributes {
   const m = { ...DEFAULT_OPTIONS.page.margin, ...(options.page?.margin ?? {}) }
   const unit = m.unit ?? DEFAULT_OPTIONS.page.margin.unit
+  const def = DEFAULT_OPTIONS.page.margin
+  // 任一字段非有限非负数（NaN / 负数 / 字符串 as any）都回退到默认值，
+  // 避免 NaN 进 OOXML 让 Word 报「文件已损坏」、负 margin 让 Word 拒开
   return {
-    top: toTwip(m.top, unit),
-    right: toTwip(m.right, unit),
-    bottom: toTwip(m.bottom, unit),
-    left: toTwip(m.left, unit),
-    header: toTwip(m.header, unit),
-    footer: toTwip(m.footer, unit),
+    top: safeTwip(m.top, unit, def.top),
+    right: safeTwip(m.right, unit, def.right),
+    bottom: safeTwip(m.bottom, unit, def.bottom),
+    left: safeTwip(m.left, unit, def.left),
+    header: safeTwip(m.header, unit, def.header),
+    footer: safeTwip(m.footer, unit, def.footer),
   }
 }
 
@@ -119,7 +122,8 @@ function resolvePageNumbers(
     lowerLetter: NumberFormat.LOWER_LETTER,
   } as const
   return {
-    start: options.start ?? 1,
+    // start 同样防御 NaN / 负数 / 非数字
+    start: safeNonNegativeInt(options.start, 1),
     formatType: options.format ? formatMap[options.format] : NumberFormat.DECIMAL,
   }
 }

@@ -119,24 +119,59 @@ function appendBlock(block: Block, out: FileChild[], ctx: BuildContext): void {
   }
 }
 
+// blockquote 视觉样式：左缩进 + 左边线灰条
+const BLOCKQUOTE_INDENT = { left: 720 } as const
+const BLOCKQUOTE_BORDER = {
+  left: { style: BorderStyle.SINGLE, size: 12, color: 'CCCCCC', space: 8 },
+} as const
+
 function appendBlockquote(block: Block, out: FileChild[], ctx: BuildContext): void {
   if (block.kind === 'paragraph') {
     out.push(
       new Paragraph({
-        indent: { left: 720 },
-        border: {
-          left: { style: BorderStyle.SINGLE, size: 12, color: 'CCCCCC', space: 8 },
-        },
+        indent: BLOCKQUOTE_INDENT,
+        border: BLOCKQUOTE_BORDER,
         alignment: toAlignment(block.align),
         children: inlinesToRuns(block.inlines, ctx),
       }),
     )
     return
   }
+  if (block.kind === 'heading') {
+    // <blockquote><h2>...</h2></blockquote> 也应继承引用视觉，否则会出现「段落有缩进、标题没缩进」的断层
+    out.push(
+      new Paragraph({
+        heading: HEADING_MAP[block.level],
+        indent: BLOCKQUOTE_INDENT,
+        border: BLOCKQUOTE_BORDER,
+        alignment: toAlignment(block.align),
+        children: inlinesToRuns(block.inlines, ctx),
+      }),
+    )
+    return
+  }
+  if (block.kind === 'pre') {
+    // <pre> 拆成多行段落，每行也带引用视觉
+    const trimmed = block.text.replace(/^\n/, '').replace(/\n$/, '')
+    const lines = trimmed.length === 0 ? [''] : trimmed.split('\n')
+    for (const line of lines) {
+      out.push(
+        new Paragraph({
+          indent: BLOCKQUOTE_INDENT,
+          border: BLOCKQUOTE_BORDER,
+          children: [new TextRun({ text: line, font: 'Consolas' })],
+        }),
+      )
+    }
+    return
+  }
   if (block.kind === 'blockquote') {
     for (const child of block.children) appendBlockquote(child, out, ctx)
     return
   }
+  // list-item / table / hr / math / pageBreak：维持原渲染
+  // - list-item 已有 numbering 缩进，再叠加 indent 会冲突
+  // - table / hr / math / pageBreak 不直接适配段落级 indent+border
   appendBlock(block, out, ctx)
 }
 

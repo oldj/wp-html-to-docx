@@ -50,4 +50,13 @@ describe('builder XML - image', () => {
     })
     expect(document).toContain('<w:drawing>')
   })
+
+  it('<a href><img/></a> 包成 hyperlink，使图片可点击', async () => {
+    // 防回归：image inline 上的 style.link 曾被 builder 忽略，超链接丢失
+    const { document } = await unpack(
+      `<p><a href="https://example.com"><img src="${TINY_PNG_DATA_URL}"/></a></p>`,
+    )
+    expect(document).toContain('w:hyperlink')
+    expect(document).toContain('<w:drawing>')
+  })
 })

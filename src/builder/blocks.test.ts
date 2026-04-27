@@ -55,3 +55,24 @@ describe('builder XML 断言 - 文本块', () => {
     expect(xml).toMatch(/<w:br\s*\/>|<w:br\s/)
   })
 })
+
+describe('builder XML 断言 - blockquote 视觉一致性', () => {
+  it('blockquote 内 heading：仍带左缩进 + 左边线灰条', async () => {
+    // 防回归：曾经 <blockquote><h2/></blockquote> 标题被走 appendBlock，丢失引用块视觉
+    const xml = await getDocumentXml('<blockquote><h2>title</h2><p>body</p></blockquote>')
+    // 标题段落带 Heading2 + 左缩进 720
+    expect(xml).toContain('Heading2')
+    // 至少存在两段都带 left=720 缩进与 CCCCCC 左边线
+    const indentMatches = xml.match(/<w:ind[^>]*w:left="720"/g) ?? []
+    expect(indentMatches.length).toBeGreaterThanOrEqual(2)
+    expect(xml).toMatch(/<w:left[^>]*w:color="CCCCCC"/)
+  })
+
+  it('blockquote 内 pre：每行段落都带引用视觉', async () => {
+    const xml = await getDocumentXml('<blockquote><pre>a\nb</pre></blockquote>')
+    // pre 拆出 2 行 → 至少 2 段带 left=720
+    const indentMatches = xml.match(/<w:ind[^>]*w:left="720"/g) ?? []
+    expect(indentMatches.length).toBeGreaterThanOrEqual(2)
+    expect(xml).toContain('Consolas')
+  })
+})

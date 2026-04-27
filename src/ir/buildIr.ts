@@ -227,34 +227,43 @@ function walkListItem(
     }
   }
 
-  for (const child of adapter.getChildNodes(node)) {
+  // 递归走查 li 的后代节点：
+  // - ul/ol：作为嵌套列表抽到 blockTail（即便被 <div> 等非内联块包裹也能挖出来）
+  // - math / page-break：作为 phrasing 元素整体保留到 inlineNodes
+  // - 其它块级元素：进入容器、对其子节点继续递归（解决 <li><div><ul>...</ul></div></li> 这类丢失嵌套列表的场景）
+  // - 内联元素 / 文本：作为叶节点进 inlineNodes
+  const visit = (child: ParsedNode): void => {
     if (isElement(child)) {
       const tag = child.tagName
       if (tag === 'ul' || tag === 'ol') {
-        // 嵌套列表，平铺到 blockTail
         blockTail.push(...walkList(child, tag === 'ol', ctx, listStack))
-        continue
+        return
       }
-      // math / page-break 是 phrasing 元素，整体保留以便 collectInlines 输出 math/pageBreak Inline
-      // （否则会落到下面「展平包装」分支，导致 MathML 内文本泄漏或 page-break 丢失）
       if (tag === 'math' || tag === 'page-break') {
         pushBoundary(false)
         inlineNodes.push(child)
         lastWasBlock = false
-        continue
+        return
       }
-      // 其它块级（如 p / div）：把其内联子节点展平到当前 li
-      // 这一步保守地避免在 li 内引入嵌套段落，破坏列表项的连贯性
       if (!isInlineTag(tag)) {
-        pushBoundary(true)
-        inlineNodes.push(...adapter.getChildNodes(child))
+        // 进入块级容器：把状态切到 block，让前后兄弟在 inline 内容到来时插入边界。
+        // 容器自身不直接 push 任何 inlineNodes，由后代叶节点决定是否产生内容。
         lastWasBlock = true
-        continue
+        for (const grand of adapter.getChildNodes(child)) {
+          visit(grand)
+        }
+        // 容器结束仍标 block，使后续兄弟（无论 inline 还是 block）都被边界包裹
+        lastWasBlock = true
+        return
       }
     }
     pushBoundary(false)
     inlineNodes.push(child)
     lastWasBlock = false
+  }
+
+  for (const child of adapter.getChildNodes(node)) {
+    visit(child)
   }
 
   const inlines = collectInlines(inlineNodes)
