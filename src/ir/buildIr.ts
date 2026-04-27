@@ -12,7 +12,7 @@ import {
 import { collectInlines, isInlineTag } from './inlineCollector.js'
 import type { BuildContext } from './buildContext.js'
 import { isWhitespaceOnly } from '../utils/html.js'
-import { parseInlineStyle, parseTextAlign } from '../utils/css.js'
+import { parseInlineStyle, parsePageBreaks, parseTextAlign } from '../utils/css.js'
 import { serializeNode } from '../utils/serializeNode.js'
 
 const HEADING_LEVELS: Record<string, 1 | 2 | 3 | 4 | 5 | 6> = {
@@ -67,68 +67,105 @@ function walkBlocks(
     }
     flushInline()
 
-    const heading = HEADING_LEVELS[tag]
-    if (heading !== undefined) {
-      out.push({
+    // 块级 CSS page-break-before/after：标准 CSS 语义，before 在前 / after 在后；
+    // <hr class="page-break"> 和 <page-break> 自身就是分页符，不再叠加
+    const sides = pageBreakSides(node)
+    if (sides.before) out.push({ kind: 'pageBreak' })
+    out.push(...emitBlockForElement(node, ctx, listStack))
+    if (sides.after) out.push({ kind: 'pageBreak' })
+  }
+  flushInline()
+  return out
+}
+
+/** 把单个块级元素映射为 Block[]（可能是多个，如 ul/ol 平铺） */
+function emitBlockForElement(
+  node: ParsedElement,
+  ctx: BuildContext,
+  listStack: ListFrame[],
+): Block[] {
+  const tag = node.tagName
+
+  const heading = HEADING_LEVELS[tag]
+  if (heading !== undefined) {
+    return [
+      {
         kind: 'heading',
         level: heading,
         inlines: collectInlines(adapter.getChildNodes(node)),
         align: blockAlign(node),
-      })
-      continue
-    }
+      },
+    ]
+  }
 
-    switch (tag) {
-      case 'p':
-        out.push({
+  switch (tag) {
+    case 'p':
+      return [
+        {
           kind: 'paragraph',
           inlines: collectInlines(adapter.getChildNodes(node)),
           align: blockAlign(node),
-        })
-        continue
-      case 'ul':
-      case 'ol':
-        out.push(...walkList(node, tag === 'ol', ctx, listStack))
-        continue
-      case 'li':
-        // 浮在 list 外的 li：按 paragraph 处理（parse5 通常会修正，但兜底）
-        out.push({
+        },
+      ]
+    case 'ul':
+    case 'ol':
+      return walkList(node, tag === 'ol', ctx, listStack)
+    case 'li':
+      // 浮在 list 外的 li：按 paragraph 处理（parse5 通常会修正，但兜底）
+      return [
+        {
           kind: 'paragraph',
           inlines: collectInlines(adapter.getChildNodes(node)),
           align: blockAlign(node),
-        })
-        continue
-      case 'blockquote':
-        out.push({
+        },
+      ]
+    case 'blockquote':
+      return [
+        {
           kind: 'blockquote',
           children: walkBlocks(adapter.getChildNodes(node), ctx, listStack),
-        })
-        continue
-      case 'hr':
-        out.push({ kind: 'hr' })
-        continue
-      case 'pre':
-        out.push({ kind: 'pre', text: extractPreText(node) })
-        continue
-      case 'table':
-        out.push({ kind: 'table', rows: walkTable(node, ctx) })
-        continue
-      case 'math':
-        // MVP 仅识别并保留 MathML 字符串，渲染为 [math] 占位段落
-        // 进阶阶段 A 接入 mathml2omml 做真实转换
-        out.push({
+        },
+      ]
+    case 'hr':
+      // <hr class="page-break"> 替代为分页符（不再画横线）
+      if (hasClass(node, 'page-break')) return [{ kind: 'pageBreak' }]
+      return [{ kind: 'hr' }]
+    case 'pre':
+      return [{ kind: 'pre', text: extractPreText(node) }]
+    case 'table':
+      return [{ kind: 'table', rows: walkTable(node, ctx) }]
+    case 'math':
+      return [
+        {
           kind: 'math',
           mathml: serializeNode(node),
           display: getAttr(node, 'display') === 'block' ? 'block' : 'inline',
-        })
-        continue
-      default:
-        // 未知块级容器：递归其内部
-        out.push(...walkBlocks(adapter.getChildNodes(node), ctx, listStack))
+        },
+      ]
+    case 'page-break': {
+      // parse5 不识别 `<page-break/>` 自闭合，后续兄弟节点会被解析为它的子节点；
+      // 因此把子节点继续按块级处理，附在分页符之后，避免丢内容
+      const childBlocks = walkBlocks(adapter.getChildNodes(node), ctx, listStack)
+      return [{ kind: 'pageBreak' }, ...childBlocks]
     }
+    default:
+      // 未知块级容器：递归其内部
+      return walkBlocks(adapter.getChildNodes(node), ctx, listStack)
   }
-  flushInline()
-  return out
+}
+
+/** 从元素 inline style 取分页指令；不含 style 属性时返回 { before:false, after:false } */
+function pageBreakSides(el: ParsedElement): { before: boolean; after: boolean } {
+  const style = getAttr(el, 'style')
+  if (style === undefined) return { before: false, after: false }
+  return parsePageBreaks(parseInlineStyle(style))
+}
+
+/** 元素的 class 属性是否包含某个精确 token */
+function hasClass(el: ParsedElement, name: string): boolean {
+  const cls = getAttr(el, 'class')
+  if (cls === undefined) return false
+  return cls.split(/\s+/).includes(name)
 }
 
 /**

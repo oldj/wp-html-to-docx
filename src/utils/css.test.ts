@@ -6,6 +6,7 @@ import {
   parseFontFamily,
   isBoldWeight,
   parseTextAlign,
+  parsePageBreaks,
 } from './css.js'
 
 describe('parseInlineStyle', () => {
@@ -139,5 +140,55 @@ describe('parseTextAlign', () => {
     expect(parseTextAlign(undefined)).toBeUndefined()
     expect(parseTextAlign('start')).toBeUndefined()
     expect(parseTextAlign('inherit')).toBeUndefined()
+  })
+})
+
+describe('parsePageBreaks', () => {
+  it('legacy page-break-before: always', () => {
+    expect(parsePageBreaks({ 'page-break-before': 'always' })).toEqual({
+      before: true,
+      after: false,
+    })
+  })
+
+  it('legacy page-break-after: always', () => {
+    expect(parsePageBreaks({ 'page-break-after': 'always' })).toEqual({
+      before: false,
+      after: true,
+    })
+  })
+
+  it('CSS3 break-before: page', () => {
+    expect(parsePageBreaks({ 'break-before': 'page' })).toEqual({
+      before: true,
+      after: false,
+    })
+  })
+
+  it('CSS3 break-after: page / left / right / recto / verso / always / all 都视为强制', () => {
+    for (const v of ['page', 'left', 'right', 'recto', 'verso', 'always', 'all']) {
+      expect(parsePageBreaks({ 'break-after': v })).toEqual({
+        before: false,
+        after: true,
+      })
+    }
+  })
+
+  it('legacy 与 CSS3 同时存在：取并集', () => {
+    expect(
+      parsePageBreaks({ 'page-break-before': 'always', 'break-after': 'page' }),
+    ).toEqual({ before: true, after: true })
+  })
+
+  it('auto / avoid / 不识别值 不触发', () => {
+    expect(parsePageBreaks({ 'page-break-before': 'auto' })).toEqual({
+      before: false,
+      after: false,
+    })
+    expect(parsePageBreaks({ 'break-after': 'avoid' })).toEqual({
+      before: false,
+      after: false,
+    })
+    expect(parsePageBreaks({})).toEqual({ before: false, after: false })
   })
 })

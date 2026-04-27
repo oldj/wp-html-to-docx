@@ -3,6 +3,7 @@
 import {
   ExternalHyperlink,
   ImageRun,
+  PageBreak,
   ShadingType,
   TextRun,
   type ParagraphChild,
@@ -23,6 +24,10 @@ export function inlinesToRuns(inlines: Inline[], ctx: BuildContext): ParagraphCh
   for (const item of inlines) {
     if (item.kind === 'break') {
       out.push(new TextRun({ break: 1 }))
+      continue
+    }
+    if (item.kind === 'pageBreak') {
+      out.push(new PageBreak())
       continue
     }
     if (item.kind === 'text') {

@@ -168,3 +168,41 @@ export function parseTextAlign(value: string | undefined): BlockAlign | undefine
   if (v === 'left' || v === 'right' || v === 'center' || v === 'justify') return v
   return undefined
 }
+
+/**
+ * 解析分页相关 CSS：兼容 legacy `page-break-before/after` 与 CSS3 `break-before/after`。
+ * 返回 { before, after }，仅当声明被识别为「强制分页」时为 true；其他取值（auto / avoid 等）均为 false。
+ *
+ * 强制分页的取值：
+ * - legacy: `always` / `left` / `right`
+ * - CSS3:   `page` / `left` / `right` / `recto` / `verso` / `always` / `all`
+ */
+export type PageBreakSides = { before: boolean; after: boolean }
+
+export function parsePageBreaks(decls: Record<string, string>): PageBreakSides {
+  return {
+    before:
+      isForceBreak(decls['page-break-before'], 'legacy') ||
+      isForceBreak(decls['break-before'], 'css3'),
+    after:
+      isForceBreak(decls['page-break-after'], 'legacy') ||
+      isForceBreak(decls['break-after'], 'css3'),
+  }
+}
+
+function isForceBreak(value: string | undefined, kind: 'legacy' | 'css3'): boolean {
+  if (value === undefined) return false
+  const v = value.trim().toLowerCase()
+  if (kind === 'legacy') {
+    return v === 'always' || v === 'left' || v === 'right'
+  }
+  return (
+    v === 'page' ||
+    v === 'left' ||
+    v === 'right' ||
+    v === 'recto' ||
+    v === 'verso' ||
+    v === 'always' ||
+    v === 'all'
+  )
+}

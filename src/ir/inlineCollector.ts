@@ -79,6 +79,16 @@ function collectOne(
     out.push({ kind: 'break' })
     return
   }
+  if (tag === 'page-break') {
+    // 行内分页：<p>foo<page-break/>bar</p> 这种用法，与文本同段
+    // 注意 parse5 不识别自闭合：<page-break/> 后续兄弟节点会被解析为 page-break 的子节点，
+    // 因此这里要把子节点继续作为「跟随兄弟」处理，避免丢内容
+    out.push({ kind: 'pageBreak' })
+    for (const c of adapter.getChildNodes(node)) {
+      collectOne(c, activeStyle, out)
+    }
+    return
+  }
   if (tag === 'math') {
     // 保留 MathML 原文；后续在 collectMath 阶段异步转 OMML，渲染层据此输出 m:oMath。
     // 转换失败 / 依赖缺失时，渲染层退回 [math] 占位

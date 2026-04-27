@@ -25,13 +25,15 @@ export type InlineStyle = {
   fontFamily?: string
 }
 
-/** 内联节点：组合后映射为 TextRun / ImageRun / ExternalHyperlink / 行内 OMML */
+/** 内联节点：组合后映射为 TextRun / ImageRun / ExternalHyperlink / 行内 OMML / 行内分页符 */
 export type Inline =
   | { kind: 'text'; text: string; style: InlineStyle }
   | { kind: 'break' }
   | { kind: 'image'; src: string; alt?: string; style: InlineStyle }
   /** 行内 <math>：原文 MathML，转换在 collectMath 阶段写入 ctx.mathOmml */
   | { kind: 'math'; mathml: string }
+  /** 行内分页符：来自段内 <page-break>，渲染为 docx PageBreak run，与同段文本同时存在 */
+  | { kind: 'pageBreak' }
 
 /** 列表层级引用，由 BuildContext.registerList 注册并填入 numbering 配置 */
 export type ListRef = {
@@ -51,6 +53,8 @@ export type Block =
   | { kind: 'hr' }
   | { kind: 'table'; rows: TableRow[] }
   | { kind: 'math'; mathml: string; display: 'inline' | 'block' }
+  /** 块级分页符：来源 <hr class="page-break"> / <page-break> / 块级元素 CSS page-break-* */
+  | { kind: 'pageBreak' }
 
 export type TableRow = {
   isHeader: boolean

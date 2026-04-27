@@ -4,6 +4,7 @@ import {
   AlignmentType,
   BorderStyle,
   HeadingLevel,
+  PageBreak,
   Paragraph,
   TextRun,
   type FileChild,
@@ -88,6 +89,10 @@ function appendBlock(block: Block, out: FileChild[], ctx: BuildContext): void {
       return
     case 'table':
       out.push(tableBlockToFileChild(block, ctx))
+      return
+    case 'pageBreak':
+      // 块级分页：独立段落含 PageBreak run，渲染为 <w:br w:type="page"/>
+      out.push(new Paragraph({ children: [new PageBreak()] }))
       return
     case 'math': {
       const omml = ctx.mathOmml.get(block.mathml)

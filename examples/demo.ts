@@ -58,6 +58,13 @@ const html = `
   <p>引用块内的文本，可包含 <strong>样式</strong>。</p>
 </blockquote>
 
+<h2>分页符</h2>
+<p>下一段使用 CSS 强制分页：</p>
+<p style="page-break-before: always">这段在新一页开头。</p>
+<p>这段没有分页指令。</p>
+<hr class="page-break">
+<p>上一行是 <code>&lt;hr class="page-break"&gt;</code>，把横线替代成了分页。</p>
+
 <h2>预格式化</h2>
 <pre><code>function hello() {
   console.log('hi')
