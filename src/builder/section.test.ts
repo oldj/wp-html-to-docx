@@ -76,6 +76,14 @@ describe('section - 页眉页脚', () => {
     expect(footer1).toContain('C')
     expect(footer1).toContain('R')
   })
+
+  it('部分对象 footer：仅 center，left/right 缺省', async () => {
+    // 覆盖 normalizeSlots 中未定义槽位的透传分支
+    const { footer1 } = await unpack('<p>x</p>', {
+      footer: { center: 'ONLY' },
+    })
+    expect(footer1).toContain('ONLY')
+  })
 })
 
 describe('section - 页码', () => {

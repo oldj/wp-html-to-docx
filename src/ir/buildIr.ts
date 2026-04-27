@@ -3,6 +3,7 @@
 import type { Block, TableCell, TableRow } from '../types.js'
 import {
   adapter,
+  getAttr,
   isElement,
   isTextNode,
   type ParsedElement,
@@ -55,7 +56,7 @@ function walkBlocks(
     }
     if (!isElement(node)) continue
 
-    const tag = node.tagName.toLowerCase()
+    const tag = node.tagName
     if (isInlineTag(tag)) {
       inlineBuffer.push(node)
       continue
@@ -111,7 +112,7 @@ function walkBlocks(
         out.push({
           kind: 'math',
           mathml: serializeNode(node),
-          display: getAttrValue(node, 'display') === 'block' ? 'block' : 'inline',
+          display: getAttr(node, 'display') === 'block' ? 'block' : 'inline',
         })
         continue
       default:
@@ -147,7 +148,7 @@ function walkList(
   const newStack = [...listStack, frame]
   for (const child of adapter.getChildNodes(node)) {
     if (!isElement(child)) continue
-    const tag = child.tagName.toLowerCase()
+    const tag = child.tagName
     if (tag !== 'li') continue
     out.push(...walkListItem(child, frame, ctx, newStack))
   }
@@ -171,7 +172,7 @@ function walkListItem(
 
   for (const child of adapter.getChildNodes(node)) {
     if (isElement(child)) {
-      const tag = child.tagName.toLowerCase()
+      const tag = child.tagName
       if (tag === 'ul' || tag === 'ol') {
         // 嵌套列表，平铺到 blockTail
         blockTail.push(...walkList(child, tag === 'ol', ctx, listStack))
@@ -217,7 +218,7 @@ function collectRows(
 ): void {
   for (const child of adapter.getChildNodes(node)) {
     if (!isElement(child)) continue
-    const tag = child.tagName.toLowerCase()
+    const tag = child.tagName
     if (tag === 'thead') {
       collectRows(child, true, ctx, out)
       continue
@@ -244,7 +245,7 @@ function walkTableRow(
   let cellCount = 0
   for (const child of adapter.getChildNodes(node)) {
     if (!isElement(child)) continue
-    const tag = child.tagName.toLowerCase()
+    const tag = child.tagName
     if (tag !== 'th' && tag !== 'td') continue
     cellCount += 1
     if (tag === 'th') thCount += 1
@@ -256,8 +257,8 @@ function walkTableRow(
 }
 
 function walkTableCell(node: ParsedElement, ctx: BuildContext): TableCell {
-  const colSpan = parsePositiveInt(getAttrValue(node, 'colspan'))
-  const rowSpan = parsePositiveInt(getAttrValue(node, 'rowspan'))
+  const colSpan = parsePositiveInt(getAttr(node, 'colspan'))
+  const rowSpan = parsePositiveInt(getAttr(node, 'rowspan'))
   const children = walkBlocks(adapter.getChildNodes(node), ctx, [])
   // 单元格至少给一个 paragraph，避免 docx 拒绝空 cell
   const safeChildren: Block[] =
@@ -267,10 +268,6 @@ function walkTableCell(node: ParsedElement, ctx: BuildContext): TableCell {
     colSpan,
     rowSpan,
   }
-}
-
-function getAttrValue(el: ParsedElement, name: string): string | undefined {
-  return el.attrs.find((a) => a.name === name)?.value
 }
 
 /** 序列化节点为 outerHTML 字符串（用于保留 MathML 原文以便后续转换） */

@@ -34,6 +34,11 @@ import { resolvePageSizeTwip, toTwip } from '../utils/units.js'
 type Slot = 'left' | 'center' | 'right'
 type Region = 'header' | 'footer'
 
+// 槽位内容：用对象 marker 区分用户文本与页码模板，避免靠字符串前缀判别
+type SlotContent =
+  | { kind: 'text'; text: string }
+  | { kind: 'pageNumber'; template: string }
+
 export function buildSection(
   options: HtmlToDocxOptions,
   children: readonly FileChild[],
@@ -128,13 +133,14 @@ function buildHeaderFooterParagraphs(
   const pn = resolveSlottedPageNumber(pageNumber, region)
   if (pn !== null) {
     // 把页码内容放进对应槽位（覆盖；与原内容并存时给出 console.warn）
-    if (slots[pn.slot] !== undefined && slots[pn.slot] !== '') {
+    const existing = slots[pn.slot]
+    if (existing !== undefined && !(existing.kind === 'text' && existing.text === '')) {
       // eslint-disable-next-line no-console
       console.warn(
         `pageNumber.position '${pn.slot}' overlaps with existing ${region} content; pageNumber takes priority`,
       )
     }
-    slots[pn.slot] = '__PAGE_NUMBER_TOKEN__' + pn.template
+    slots[pn.slot] = { kind: 'pageNumber', template: pn.template }
   }
   if (slots.left === undefined && slots.center === undefined && slots.right === undefined) {
     return []
@@ -142,10 +148,18 @@ function buildHeaderFooterParagraphs(
   return [composeThreeSlotParagraph(slots)]
 }
 
-function normalizeSlots(value: HeaderFooterValue | undefined): Record<Slot, string | undefined> {
+function normalizeSlots(
+  value: HeaderFooterValue | undefined,
+): Record<Slot, SlotContent | undefined> {
   if (value === undefined) return { left: undefined, center: undefined, right: undefined }
-  if (typeof value === 'string') return { left: value, center: undefined, right: undefined }
-  return { left: value.left, center: value.center, right: value.right }
+  if (typeof value === 'string') {
+    return { left: { kind: 'text', text: value }, center: undefined, right: undefined }
+  }
+  return {
+    left: value.left !== undefined ? { kind: 'text', text: value.left } : undefined,
+    center: value.center !== undefined ? { kind: 'text', text: value.center } : undefined,
+    right: value.right !== undefined ? { kind: 'text', text: value.right } : undefined,
+  }
 }
 
 function resolveSlottedPageNumber(
@@ -159,20 +173,20 @@ function resolveSlottedPageNumber(
   return { slot, template: options.template ?? '{PAGE}' }
 }
 
-function composeThreeSlotParagraph(slots: Record<Slot, string | undefined>): Paragraph {
+function composeThreeSlotParagraph(
+  slots: Record<Slot, SlotContent | undefined>,
+): Paragraph {
   // 单段三槽对齐：left / center / right，用 tab stops 实现
   // 中部 tab 在页面中间（4500 twip），右部 tab 在页面右侧（约 9000 twip / Letter 内宽 6.5in）
   const children: ParagraphChild[] = []
   if (slots.left !== undefined) children.push(...renderSlot(slots.left))
-  const hasCenter = slots.center !== undefined
-  const hasRight = slots.right !== undefined
-  if (hasCenter) {
+  if (slots.center !== undefined) {
     children.push(new TextRun({ children: [new Tab()] }))
-    children.push(...renderSlot(slots.center as string))
+    children.push(...renderSlot(slots.center))
   }
-  if (hasRight) {
+  if (slots.right !== undefined) {
     children.push(new TextRun({ children: [new Tab()] }))
-    children.push(...renderSlot(slots.right as string))
+    children.push(...renderSlot(slots.right))
   }
   return new Paragraph({
     alignment: AlignmentType.LEFT,
@@ -184,14 +198,11 @@ function composeThreeSlotParagraph(slots: Record<Slot, string | undefined>): Par
   })
 }
 
-function renderSlot(text: string): ParagraphChild[] {
-  // 含页码模板：拆解为字面文本 + PageNumber 字段
-  const TOKEN = '__PAGE_NUMBER_TOKEN__'
-  if (text.startsWith(TOKEN)) {
-    const tmpl = text.slice(TOKEN.length)
-    return [renderPageNumberRun(tmpl)]
+function renderSlot(content: SlotContent): ParagraphChild[] {
+  if (content.kind === 'pageNumber') {
+    return [renderPageNumberRun(content.template)]
   }
-  return [new TextRun({ text })]
+  return [new TextRun({ text: content.text })]
 }
 
 function renderPageNumberRun(template: string): TextRun {

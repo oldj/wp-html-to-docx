@@ -8,3 +8,6 @@ coverage
 .DS_Store
 
 plan.md
+
+# demo 产物
+examples/out.docx
