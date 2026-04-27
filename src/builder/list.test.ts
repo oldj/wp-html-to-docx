@@ -52,4 +52,15 @@ describe('builder XML - blockquote / hr / pre', () => {
     const { document } = await getDocs('<pre>code</pre>')
     expect(document).toMatch(/Consolas/)
   })
+
+  it('pre 多行内容拆为多个独立 paragraph', async () => {
+    // preToParagraphs 按 \n 切行，每行各成段；首尾的 \n 被裁掉
+    const { document } = await getDocs('<pre>line 1\nline 2\nline 3</pre>')
+    const body = document.match(/<w:body>([\s\S]*?)<w:sectPr/)?.[1] ?? ''
+    const paragraphCount = (body.match(/<w:p\b/g) ?? []).length
+    expect(paragraphCount).toBe(3)
+    expect(body).toContain('line 1')
+    expect(body).toContain('line 2')
+    expect(body).toContain('line 3')
+  })
 })

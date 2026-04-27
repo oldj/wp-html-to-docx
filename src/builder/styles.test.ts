@@ -26,3 +26,28 @@ describe('default styles - 字体与字号', () => {
     expect(xml).toMatch(/<w:sz[^>]*w:val="28"/)
   })
 })
+
+describe('Document metadata 写入 docProps/core.xml', () => {
+  // 守住一个端到端：title / creator / description 透传给 docx Document → 生成器写入核心属性
+  // 若 docx 库未来改了 metadata 字段名，会立即失败
+  it('title / creator / description 都出现在 core.xml', async () => {
+    const u8 = await htmlToDocx('<p>x</p>', {
+      title: 'My Title',
+      creator: 'Alice',
+      description: 'A test document.',
+    })
+    const files = unzipSync(u8)
+    const coreXml = files['docProps/core.xml']
+    expect(coreXml).toBeDefined()
+    const xml = strFromU8(coreXml as Uint8Array)
+    expect(xml).toContain('My Title')
+    expect(xml).toContain('Alice')
+    expect(xml).toContain('A test document.')
+  })
+
+  it('未配置时各字段在 core.xml 中为空或默认（不抛错）', async () => {
+    const u8 = await htmlToDocx('<p>x</p>')
+    const files = unzipSync(u8)
+    expect(files['docProps/core.xml']).toBeDefined()
+  })
+})

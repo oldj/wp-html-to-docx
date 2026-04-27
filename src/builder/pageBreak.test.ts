@@ -113,6 +113,28 @@ describe('CSS page-break-before / page-break-after 与 CSS3 break-before / break
     )
     expect(countPageBreaks(xml)).toBe(0)
   })
+
+  it('CSS 不只对 p 生效：ul / table / blockquote / h1 上同样触发', async () => {
+    // walker 主循环统一处理，理论上对所有块级都该生效
+    // 这一组用例守住「以后某次重构把 sides 检查移进个别 case 内部」会立即失败的边界
+    const ul = await getDocXml(
+      '<p>x</p><ul style="page-break-before: always"><li>a</li></ul>',
+    )
+    expect(countPageBreaks(ul)).toBe(1)
+
+    const table = await getDocXml(
+      '<table style="page-break-after: always"><tr><td>x</td></tr></table><p>y</p>',
+    )
+    expect(countPageBreaks(table)).toBe(1)
+
+    const bq = await getDocXml(
+      '<p>x</p><blockquote style="page-break-before: always"><p>y</p></blockquote>',
+    )
+    expect(countPageBreaks(bq)).toBe(1)
+
+    const h1 = await getDocXml('<p>x</p><h1 style="break-before: page">章节</h1>')
+    expect(countPageBreaks(h1)).toBe(1)
+  })
 })
 
 describe('B1 回归：<page-break> 在 <li> 内不被丢弃', () => {

@@ -86,4 +86,49 @@ describe('buildIr - blockquote / hr / pre', () => {
     const { ir } = build('<pre><code>x\ny</code></pre>')
     expect(ir).toEqual<Block[]>([{ kind: 'pre', text: 'x\ny' }])
   })
+
+  it('嵌套 blockquote：内层完整保留，并能含 p + ul', () => {
+    // walkBlocks 对 blockquote 子节点递归走自己；嵌套层数与混合内容应当无损保留
+    const { ir } = build(
+      '<blockquote><blockquote><p>inner</p><ul><li>x</li></ul></blockquote></blockquote>',
+    )
+    expect(ir).toHaveLength(1)
+    if (ir[0]?.kind !== 'blockquote') throw new Error('expected outer blockquote')
+    const outerChildren = ir[0].children
+    expect(outerChildren).toHaveLength(1)
+    if (outerChildren[0]?.kind !== 'blockquote') throw new Error('expected inner blockquote')
+    const innerChildren = outerChildren[0].children
+    // 内层应有一个 paragraph 与一个 list-item
+    const kinds = innerChildren.map((b) => b.kind)
+    expect(kinds).toContain('paragraph')
+    expect(kinds).toContain('list-item')
+  })
+})
+
+describe('buildIr - 空场景兜底', () => {
+  it('空 HTML 字符串 → 0 个 block', () => {
+    const { ir } = build('')
+    expect(ir).toEqual([])
+  })
+
+  it('纯空白 HTML → 0 个 block（空白文本节点不产生空段）', () => {
+    const { ir } = build('   \n\t  ')
+    expect(ir).toEqual([])
+  })
+
+  it('空 <li> → list-item.inlines 为空数组，不抛错', () => {
+    const { ir } = build('<ul><li></li></ul>')
+    expect(ir).toHaveLength(1)
+    if (ir[0]?.kind !== 'list-item') throw new Error('expected list-item')
+    expect(ir[0].inlines).toEqual([])
+  })
+
+  it('空 <td> → cell 至少含一个空 paragraph，避免 docx 拒绝空 cell', () => {
+    const { ir } = build('<table><tr><td></td></tr></table>')
+    if (ir[0]?.kind !== 'table') throw new Error('expected table')
+    const cell = ir[0].rows[0]?.cells[0]
+    expect(cell).toBeDefined()
+    expect(cell?.children).toHaveLength(1)
+    expect(cell?.children[0]).toMatchObject({ kind: 'paragraph', inlines: [] })
+  })
 })

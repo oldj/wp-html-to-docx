@@ -127,3 +127,45 @@ describe('合并相邻 run：颜色不同时不应合并', () => {
     expect(xml).toMatch(/w:val="0000FF"/)
   })
 })
+
+describe('合并相邻 run：sameStyle 字段完整性回归', () => {
+  // 守住一个回归边界：在 InlineStyle 加新字段时若忘了同步 sameStyle，
+  // 相邻样式不同的 run 会被错误合并；这里对每个非显而易见的字段单独断言
+
+  it('不同 fontSize 不应合并', async () => {
+    const xml = await getDocXml(
+      '<p><span style="font-size: 14pt">a</span><span style="font-size: 18pt">b</span></p>',
+    )
+    expect(xml).toMatch(/<w:sz[^>]*w:val="28"/)
+    expect(xml).toMatch(/<w:sz[^>]*w:val="36"/)
+  })
+
+  it('不同 fontFamily 不应合并', async () => {
+    const xml = await getDocXml(
+      '<p><span style="font-family: Arial">a</span><span style="font-family: Courier">b</span></p>',
+    )
+    expect(xml).toMatch(/<w:rFonts[^>]*w:ascii="Arial"/)
+    expect(xml).toMatch(/<w:rFonts[^>]*w:ascii="Courier"/)
+  })
+
+  it('不同 bgColor 不应合并', async () => {
+    const xml = await getDocXml(
+      '<p><span style="background-color: yellow">a</span><span style="background-color: red">b</span></p>',
+    )
+    expect(xml).toMatch(/<w:shd[^>]*w:fill="FFFF00"/)
+    expect(xml).toMatch(/<w:shd[^>]*w:fill="FF0000"/)
+  })
+})
+
+describe('设计断言：text-align 不做 cascade', () => {
+  it('div 上的 text-align 不会传给子 p（只直接挂在 p/h/li 上才生效）', async () => {
+    const xml = await getDocXml('<div style="text-align: center"><p>x</p></div>')
+    // 段落不应输出 w:jc——cascade 走流的话 p 会被居中，我们明确不做
+    expect(xml).not.toMatch(/<w:jc/)
+  })
+
+  it('p 自带 text-align 仍正常生效（与上一例对照）', async () => {
+    const xml = await getDocXml('<p style="text-align: center">x</p>')
+    expect(xml).toMatch(/<w:jc[^>]*w:val="center"/)
+  })
+})
