@@ -16,9 +16,11 @@ async function getDocXml(html: string): Promise<string> {
   return strFromU8(xml)
 }
 
-/** 抽出第 N 个 <w:tc>...</w:tc> 子串，便于做局部断言 */
+/** 抽出第 N 个 <w:tc>...</w:tc> 子串，便于做局部断言。
+ *  注意：非贪婪匹配，遇嵌套表会被内层 </w:tc> 截断；嵌套表用例须自行定位外层 cell 范围。 */
 function getCellXml(xml: string, index = 0): string {
-  const cells = xml.match(/<w:tc>[\s\S]*?<\/w:tc>/g) ?? []
+  // <w:tc(?:\s[^>]*)?> 兼容 docx 库未来给 <w:tc> 加属性的情况
+  const cells = xml.match(/<w:tc(?:\s[^>]*)?>[\s\S]*?<\/w:tc>/g) ?? []
   if (cells[index] === undefined) {
     throw new Error(`cell #${index} not found (got ${cells.length} cells)`)
   }
@@ -233,7 +235,7 @@ describe('表格嵌套：cell 内再放完整 <table>', () => {
     const tblCount = (xml.match(/<w:tbl\b/g) ?? []).length
     expect(tblCount).toBe(2)
     // 2) 内层全部 cell 数 = 1（外层）+ 4（内层 2x2）= 5
-    const tcCount = (xml.match(/<w:tc>/g) ?? []).length
+    const tcCount = (xml.match(/<w:tc(?:\s[^>]*)?>/g) ?? []).length
     expect(tcCount).toBe(5)
     // 3) 内层 <w:tbl> 必须闭合在外层 <w:tc> 内（否则 Word 会渲染异常）
     //    — 直接断言外层 cell 的整段范围里包含完整的内层表
