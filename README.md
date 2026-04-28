@@ -1,5 +1,9 @@
 # wp-html-to-docx
 
+[![CI](https://github.com/oldj/wp-html-to-docx/actions/workflows/ci.yml/badge.svg)](https://github.com/oldj/wp-html-to-docx/actions/workflows/ci.yml)
+[![npm version](https://img.shields.io/npm/v/wp-html-to-docx.svg)](https://www.npmjs.com/package/wp-html-to-docx)
+[![license](https://img.shields.io/npm/l/wp-html-to-docx.svg)](./LICENSE)
+
 把 HTML 字符串转换为 `.docx` 文件，**同时支持浏览器与 Node.js**。
 
 - 基于 [docx](https://www.npmjs.com/package/docx) 生成 OOXML
