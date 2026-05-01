@@ -6,6 +6,13 @@
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-05-01
+
+### Added
+
+- `language` 选项：暴露文档级语言（`value` / `eastAsia` / `bidirectional`），注入 `styles.xml` 的 `<w:rPrDefault><w:lang>`，影响 Word 拼写检查 / 校对语言归属与东亚字体回退。
+- `preserveWhitespace` 选项（默认关闭）：开启后保留文本中连续的半角空格、全角空格 U+3000、NBSP 等可见空白；含换行 / Tab 的空白序列仍折叠为单空格，避免格式化 HTML 源里的缩进/换行被当成内容。`<pre>` 块本就完全保留，不受此选项影响。
+
 ### Changed
 
 - **BREAKING**：自定义分页标签由 `<page-break>` 重命名为 `<wp-page-break>`，与项目命名空间一致；不再支持旧标签。`<hr class="page-break">` class 名与 CSS `page-break-before/after` 属性名不变。
@@ -31,5 +38,6 @@
 - 要求 Node.js >= 24
 - 测试矩阵：Vitest 双 env（node + jsdom），354 用例全过；lines 97.26% / branches 87.63% / functions 100%
 
-[Unreleased]: https://github.com/oldj/wp-html-to-docx/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/oldj/wp-html-to-docx/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/oldj/wp-html-to-docx/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/oldj/wp-html-to-docx/releases/tag/v0.1.0
