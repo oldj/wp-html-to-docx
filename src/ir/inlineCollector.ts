@@ -48,14 +48,14 @@ export function isInlineTag(tag: string): boolean {
 /**
  * 收集 nodes 下所有内联节点（递归展开样式标签），返回扁平 Inline[]
  * 块级节点会被忽略（调用方应在块级 walker 中先剥离它们）
+ *
+ * @param preserveWhitespace 是否对文本节点保留连续空格（含全角空格 U+3000）；
+ *   见 utils/html.ts 中 `collapseWhitespace` 的保守保留语义
  */
-export function collectInlines(
-  nodes: ParsedNode[],
-  activeStyle: InlineStyle = {},
-): Inline[] {
+export function collectInlines(nodes: ParsedNode[], preserveWhitespace = false): Inline[] {
   const out: Inline[] = []
   for (const node of nodes) {
-    collectOne(node, activeStyle, out)
+    collectOne(node, {}, out, preserveWhitespace)
   }
   return mergeAdjacentText(out)
 }
@@ -64,9 +64,10 @@ function collectOne(
   node: ParsedNode,
   activeStyle: InlineStyle,
   out: Inline[],
+  preserveWhitespace: boolean,
 ): void {
   if (isTextNode(node)) {
-    const text = collapseWhitespace(node.value)
+    const text = collapseWhitespace(node.value, preserveWhitespace)
     if (text.length === 0) return
     out.push({ kind: 'text', text, style: { ...activeStyle } })
     return
@@ -85,7 +86,7 @@ function collectOne(
     // 因此这里要把子节点继续作为「跟随兄弟」处理，避免丢内容
     out.push({ kind: 'pageBreak' })
     for (const c of adapter.getChildNodes(node)) {
-      collectOne(c, activeStyle, out)
+      collectOne(c, activeStyle, out, preserveWhitespace)
     }
     return
   }
@@ -107,7 +108,7 @@ function collectOne(
   const childStyle = applyTagStyle(tag, activeStyle, node)
   const children = adapter.getChildNodes(node)
   for (const c of children) {
-    collectOne(c, childStyle, out)
+    collectOne(c, childStyle, out, preserveWhitespace)
   }
 }
 

@@ -36,16 +36,12 @@ export function buildIr(nodes: ParsedNode[], ctx: BuildContext): Block[] {
   return walkBlocks(nodes, ctx, [])
 }
 
-function walkBlocks(
-  nodes: ParsedNode[],
-  ctx: BuildContext,
-  listStack: ListFrame[],
-): Block[] {
+function walkBlocks(nodes: ParsedNode[], ctx: BuildContext, listStack: ListFrame[]): Block[] {
   const out: Block[] = []
   let inlineBuffer: ParsedNode[] = []
   const flushInline = (): void => {
     if (inlineBuffer.length === 0) return
-    const inlines = collectInlines(inlineBuffer)
+    const inlines = collectInlines(inlineBuffer, ctx.options.preserveWhitespace ?? false)
     if (inlines.length > 0) {
       out.push({ kind: 'paragraph', inlines })
     }
@@ -95,7 +91,10 @@ function emitBlockForElement(
       {
         kind: 'heading',
         level: heading,
-        inlines: collectInlines(adapter.getChildNodes(node)),
+        inlines: collectInlines(
+          adapter.getChildNodes(node),
+          ctx.options.preserveWhitespace ?? false,
+        ),
         align: blockAlign(node),
       },
     ]
@@ -106,7 +105,10 @@ function emitBlockForElement(
       return [
         {
           kind: 'paragraph',
-          inlines: collectInlines(adapter.getChildNodes(node)),
+          inlines: collectInlines(
+            adapter.getChildNodes(node),
+            ctx.options.preserveWhitespace ?? false,
+          ),
           align: blockAlign(node),
         },
       ]
@@ -118,7 +120,10 @@ function emitBlockForElement(
       return [
         {
           kind: 'paragraph',
-          inlines: collectInlines(adapter.getChildNodes(node)),
+          inlines: collectInlines(
+            adapter.getChildNodes(node),
+            ctx.options.preserveWhitespace ?? false,
+          ),
           align: blockAlign(node),
         },
       ]
@@ -266,7 +271,7 @@ function walkListItem(
     visit(child)
   }
 
-  const inlines = collectInlines(inlineNodes)
+  const inlines = collectInlines(inlineNodes, ctx.options.preserveWhitespace ?? false)
   const out: Block[] = [
     {
       kind: 'list-item',
@@ -320,11 +325,7 @@ function collectRows(
   }
 }
 
-function walkTableRow(
-  node: ParsedElement,
-  inHeader: boolean,
-  ctx: BuildContext,
-): TableRow {
+function walkTableRow(node: ParsedElement, inHeader: boolean, ctx: BuildContext): TableRow {
   const cells: TableCell[] = []
   let thCount = 0
   let cellCount = 0

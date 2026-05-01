@@ -10,6 +10,12 @@ function ir(html: string): Block[] {
   return buildIr(nodes, ctx)
 }
 
+function irPreserve(html: string): Block[] {
+  const nodes = parseHtmlBodyChildren(html)
+  const ctx = new BuildContext({ preserveWhitespace: true })
+  return buildIr(nodes, ctx)
+}
+
 describe('buildIr - 文本块', () => {
   it('空字符串产生 0 个块', () => {
     expect(ir('')).toEqual([])
@@ -22,7 +28,11 @@ describe('buildIr - 文本块', () => {
   })
 
   it('h1-h6 按级别识别', () => {
-    for (let level = 1 as 1 | 2 | 3 | 4 | 5 | 6; level <= 6; level = (level + 1) as 1 | 2 | 3 | 4 | 5 | 6) {
+    for (
+      let level = 1 as 1 | 2 | 3 | 4 | 5 | 6;
+      level <= 6;
+      level = (level + 1) as 1 | 2 | 3 | 4 | 5 | 6
+    ) {
       const result = ir(`<h${level}>t</h${level}>`)
       expect(result).toEqual<Block[]>([
         { kind: 'heading', level, inlines: [{ kind: 'text', text: 't', style: {} }] },
@@ -104,9 +114,7 @@ describe('buildIr - 链接与换行', () => {
 
   it('a 内嵌 strong：link 与 bold 共存', () => {
     expect(ir('<p><a href="https://x.com"><strong>x</strong></a></p>')[0]).toMatchObject({
-      inlines: [
-        { kind: 'text', text: 'x', style: { link: 'https://x.com', bold: true } },
-      ],
+      inlines: [{ kind: 'text', text: 'x', style: { link: 'https://x.com', bold: true } }],
     })
   })
 
@@ -168,5 +176,33 @@ describe('buildIr - 空白与实体', () => {
 
   it('忽略纯空白文本节点（不产生空段）', () => {
     expect(ir('  \n  ')).toEqual([])
+  })
+})
+
+describe('buildIr - preserveWhitespace 选项', () => {
+  it('开启后，行首/行中/行尾的连续半角空格保留', () => {
+    expect(irPreserve('<p>   foo   bar   </p>')[0]).toMatchObject({
+      inlines: [{ kind: 'text', text: '   foo   bar   ', style: {} }],
+    })
+  })
+
+  it('开启后，全角空格 U+3000 也按原样保留', () => {
+    expect(irPreserve('<p>　　foo　　bar</p>')[0]).toMatchObject({
+      inlines: [{ kind: 'text', text: '　　foo　　bar', style: {} }],
+    })
+  })
+
+  it('开启后，含换行/缩进的空白仍折叠（避免格式化 HTML 源把缩进当内容）', () => {
+    // 文本节点值是 "\n   foo   bar\n"：两端含 \n 的空白 → 折叠为单空格；
+    // 中间纯空格序列 "   " → 原样保留
+    expect(irPreserve('<p>\n   foo   bar\n</p>')[0]).toMatchObject({
+      inlines: [{ kind: 'text', text: ' foo   bar ', style: {} }],
+    })
+  })
+
+  it('未开启时默认行为不变（仍折叠为单空格）', () => {
+    expect(ir('<p>   foo   bar   </p>')[0]).toMatchObject({
+      inlines: [{ kind: 'text', text: ' foo bar ', style: {} }],
+    })
   })
 })

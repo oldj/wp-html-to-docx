@@ -130,6 +130,10 @@ await htmlToDocx(html, {
   // 图片解析（见下文）
   imageResolver: undefined,
   onUnresolvedImage: 'skip',       // 'skip' | 'placeholder' | 'error'
+
+  // 是否保留文本中的连续空格（含全角空格 U+3000、NBSP 等）
+  // 含换行/Tab 的空白序列仍会折叠为单空格，避免格式化 HTML 源里的缩进/换行被当成内容
+  preserveWhitespace: false,
 })
 ```
 
@@ -189,6 +193,7 @@ await htmlToDocx(html, {
 **行为细节**：
 
 - HTML 空白默认折叠为单空格；`<pre>` 内保留所有空白与换行
+- 设 `preserveWhitespace: true` 后，连续的半角/全角空格、NBSP 等保留原样；含换行/Tab 的空白仍折叠为单空格
 - HTML 实体（`&amp;` `&lt;` `&nbsp;` `&#x4e2d;` 等）自动解码
 - `<a>` 与内联格式可任意组合（如 `<a><strong>x</strong></a>`）
 

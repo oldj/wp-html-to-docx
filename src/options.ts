@@ -28,9 +28,7 @@ export type PageOptions = {
   margin?: PageMargin
 }
 
-export type HeaderFooterValue =
-  | string
-  | { left?: string; center?: string; right?: string }
+export type HeaderFooterValue = string | { left?: string; center?: string; right?: string }
 
 export type PageNumberPosition =
   | 'header-left'
@@ -102,6 +100,16 @@ export type HtmlToDocxOptions = {
   imageResolver?: ImageResolver
   /** 未提供 resolver 且非 data URL 时的兜底策略 */
   onUnresolvedImage?: 'skip' | 'placeholder' | 'error'
+
+  /**
+   * 是否保留普通文本中的连续空格（含行首/行尾）。
+   * - false（默认）：按 HTML 标准把任意连续空白折叠为单空格。
+   * - true：保留连续的半角/全角空格、NBSP 等可见空白；含换行 `\n`/`\r`
+   *   或 `\t` 的空白序列仍折叠为单空格，避免格式化 HTML 源里的缩进/换行
+   *   被当成内容。
+   * 注意：<pre> 块内空白本就完全保留，不受此选项影响。
+   */
+  preserveWhitespace?: boolean
 }
 
 /** 单点声明的默认值，便于覆盖与测试 */
