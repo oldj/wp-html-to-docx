@@ -32,7 +32,7 @@ export type Inline =
   | { kind: 'image'; src: string; alt?: string; style: InlineStyle }
   /** 行内 <math>：原文 MathML，转换在 collectMath 阶段写入 ctx.mathOmml */
   | { kind: 'math'; mathml: string }
-  /** 行内分页符：来自段内 <page-break>，渲染为 docx PageBreak run，与同段文本同时存在 */
+  /** 行内分页符：来自段内 <wp-page-break>，渲染为 docx PageBreak run，与同段文本同时存在 */
   | { kind: 'pageBreak' }
 
 /** 列表层级引用，由 BuildContext.registerList 注册并填入 numbering 配置 */
@@ -53,7 +53,7 @@ export type Block =
   | { kind: 'hr' }
   | { kind: 'table'; rows: TableRow[] }
   | { kind: 'math'; mathml: string; display: 'inline' | 'block' }
-  /** 块级分页符：来源 <hr class="page-break"> / <page-break> / 块级元素 CSS page-break-* */
+  /** 块级分页符：来源 <hr class="page-break"> / <wp-page-break> / 块级元素 CSS page-break-* */
   | { kind: 'pageBreak' }
 
 export type TableRow = {

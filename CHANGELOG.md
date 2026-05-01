@@ -6,6 +6,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **BREAKING**：自定义分页标签由 `<page-break>` 重命名为 `<wp-page-break>`，与项目命名空间一致；不再支持旧标签。`<hr class="page-break">` class 名与 CSS `page-break-before/after` 属性名不变。
+
 ## [0.1.0] - 2026-04-28
 
 首个公开版本，浏览器与 Node.js 双端运行。

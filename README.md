@@ -184,7 +184,7 @@ await htmlToDocx(html, {
 
 **内联**：`strong/b`、`em/i`、`u`、`s/strike/del`、`code`（行内代码）、`a`、`span`、`br`、`img`、`math`（见下文）
 
-**特殊**：`page-break` 自定义标签（见 [分页](#分页)）
+**特殊**：`wp-page-break` 自定义标签（见 [分页](#分页)）
 
 **行为细节**：
 
@@ -221,18 +221,18 @@ await htmlToDocx(html, {
 
 支持三种触发器，编译为 OOXML `<w:br w:type="page"/>`，Word/WPS 中正常分页：
 
-### 1. `<page-break>` 自定义标签
+### 1. `<wp-page-break>` 自定义标签
 
 ```html
 <p>第一页内容</p>
-<page-break>
+<wp-page-break>
 <p>第二页内容</p>
 ```
 
-伪自闭合写法 `<page-break/>` 与 `<page-break />` 也能识别。可以放在段内（与文本同段）：
+伪自闭合写法 `<wp-page-break/>` 与 `<wp-page-break />` 也能识别。可以放在段内（与文本同段）：
 
 ```html
-<p>上半段<page-break/>下半段在新一页继续。</p>
+<p>上半段<wp-page-break/>下半段在新一页继续。</p>
 ```
 
 ### 2. `<hr class="page-break">` 替代横线为分页

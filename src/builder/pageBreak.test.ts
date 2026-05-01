@@ -1,4 +1,4 @@
-// 分页：<hr class="page-break"> / <page-break> / CSS page-break-* 三种触发器
+// 分页：<hr class="page-break"> / <wp-page-break> / CSS page-break-* 三种触发器
 // docx 的分页符 OOXML 形式为 <w:br w:type="page"/>，是 PageBreak run 的固有产物
 
 import { describe, it, expect } from 'vitest'
@@ -43,32 +43,32 @@ describe('<hr class="page-break"> 替代横线为分页', () => {
   })
 })
 
-describe('<page-break> 自定义标签', () => {
-  it('开标签形式 <page-break>', async () => {
-    const xml = await getDocXml('<p>a</p><page-break><p>b</p>')
+describe('<wp-page-break> 自定义标签', () => {
+  it('开标签形式 <wp-page-break>', async () => {
+    const xml = await getDocXml('<p>a</p><wp-page-break><p>b</p>')
     expect(countPageBreaks(xml)).toBe(1)
   })
 
-  it('伪自闭合 <page-break/> 仍工作（parse5 把后续兄弟当子节点，不会丢失内容）', async () => {
-    const xml = await getDocXml('<p>a</p><page-break/><p>b</p>')
+  it('伪自闭合 <wp-page-break/> 仍工作（parse5 把后续兄弟当子节点，不会丢失内容）', async () => {
+    const xml = await getDocXml('<p>a</p><wp-page-break/><p>b</p>')
     expect(countPageBreaks(xml)).toBe(1)
     // "b" 段落不应丢失
     expect(xml).toContain('b')
   })
 
-  it('伪自闭合带空格 <page-break /> 也工作', async () => {
-    const xml = await getDocXml('<p>a</p><page-break /><p>b</p>')
+  it('伪自闭合带空格 <wp-page-break /> 也工作', async () => {
+    const xml = await getDocXml('<p>a</p><wp-page-break /><p>b</p>')
     expect(countPageBreaks(xml)).toBe(1)
     expect(xml).toContain('b')
   })
 
-  it('显式闭合 <page-break></page-break>', async () => {
-    const xml = await getDocXml('<p>a</p><page-break></page-break><p>b</p>')
+  it('显式闭合 <wp-page-break></wp-page-break>', async () => {
+    const xml = await getDocXml('<p>a</p><wp-page-break></wp-page-break><p>b</p>')
     expect(countPageBreaks(xml)).toBe(1)
   })
 
-  it('段内 <p>foo<page-break/>bar</p>：分页符在同段落内', async () => {
-    const xml = await getDocXml('<p>foo<page-break/>bar</p>')
+  it('段内 <p>foo<wp-page-break/>bar</p>：分页符在同段落内', async () => {
+    const xml = await getDocXml('<p>foo<wp-page-break/>bar</p>')
     expect(countPageBreaks(xml)).toBe(1)
     // foo 与 bar 都不丢
     expect(xml).toContain('foo')
@@ -76,6 +76,11 @@ describe('<page-break> 自定义标签', () => {
     // 整篇只有一个段落（因为是行内 page break，不切段）
     const body = xml.match(/<w:body>([\s\S]*?)<w:sectPr/)?.[1] ?? ''
     expect((body.match(/<w:p\b/g) ?? []).length).toBe(1)
+  })
+
+  it('旧标签 <page-break> 不再被识别为分页（重命名后不兼容旧名）', async () => {
+    const xml = await getDocXml('<p>a</p><page-break><p>b</p>')
+    expect(countPageBreaks(xml)).toBe(0)
   })
 })
 
@@ -137,9 +142,9 @@ describe('CSS page-break-before / page-break-after 与 CSS3 break-before / break
   })
 })
 
-describe('B1 回归：<page-break> 在 <li> 内不被丢弃', () => {
-  it('list-item 内的 page-break 保留为段内 PageBreak run，文本不丢', async () => {
-    const xml = await getDocXml('<ul><li>foo<page-break/>bar</li></ul>')
+describe('B1 回归：<wp-page-break> 在 <li> 内不被丢弃', () => {
+  it('list-item 内的 wp-page-break 保留为段内 PageBreak run，文本不丢', async () => {
+    const xml = await getDocXml('<ul><li>foo<wp-page-break/>bar</li></ul>')
     expect(countPageBreaks(xml)).toBe(1)
     // foo 与 bar 都还在
     expect(xml).toContain('foo')
@@ -152,7 +157,7 @@ describe('B1 回归：<page-break> 在 <li> 内不被丢弃', () => {
 
 describe('PageBreak 渲染为 <w:br w:type="page"/>', () => {
   it('OOXML 输出 w:type="page"', async () => {
-    const xml = await getDocXml('<page-break>')
+    const xml = await getDocXml('<wp-page-break>')
     expect(xml).toMatch(/<w:br[^/>]*w:type="page"/)
   })
 })

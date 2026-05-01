@@ -145,8 +145,8 @@ function emitBlockForElement(
           display: getAttr(node, 'display') === 'block' ? 'block' : 'inline',
         },
       ]
-    case 'page-break': {
-      // parse5 不识别 `<page-break/>` 自闭合，后续兄弟节点会被解析为它的子节点；
+    case 'wp-page-break': {
+      // parse5 不识别 `<wp-page-break/>` 自闭合，后续兄弟节点会被解析为它的子节点；
       // 因此把子节点继续按块级处理，附在分页符之后，避免丢内容
       const childBlocks = walkBlocks(adapter.getChildNodes(node), ctx, listStack)
       return [{ kind: 'pageBreak' }, ...childBlocks]
@@ -206,7 +206,7 @@ function walkList(
  * 走查一个 <li>。
  * - 直系文本与内联元素 → list-item.inlines
  * - 嵌套 ul/ol → 递归后平铺到 blockTail（共享或新建 reference 由 walkList 决定）
- * - <math> / <page-break>：作为 phrasing 元素整体保留，由 collectInlines 各自产 Inline
+ * - <math> / <wp-page-break>：作为 phrasing 元素整体保留，由 collectInlines 各自产 Inline
  * - 其它块级（如 p / div）：把直系内联子节点展平到当前 li，避免在 li 内产生嵌套段落
  */
 function walkListItem(
@@ -229,7 +229,7 @@ function walkListItem(
 
   // 递归走查 li 的后代节点：
   // - ul/ol：作为嵌套列表抽到 blockTail（即便被 <div> 等非内联块包裹也能挖出来）
-  // - math / page-break：作为 phrasing 元素整体保留到 inlineNodes
+  // - math / wp-page-break：作为 phrasing 元素整体保留到 inlineNodes
   // - 其它块级元素：进入容器、对其子节点继续递归（解决 <li><div><ul>...</ul></div></li> 这类丢失嵌套列表的场景）
   // - 内联元素 / 文本：作为叶节点进 inlineNodes
   const visit = (child: ParsedNode): void => {
@@ -239,7 +239,7 @@ function walkListItem(
         blockTail.push(...walkList(child, tag === 'ol', ctx, listStack))
         return
       }
-      if (tag === 'math' || tag === 'page-break') {
+      if (tag === 'math' || tag === 'wp-page-break') {
         pushBoundary(false)
         inlineNodes.push(child)
         lastWasBlock = false

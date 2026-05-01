@@ -16,7 +16,7 @@ import { ommlToImported } from './ommlImport.js'
  * 把 Inline[] 转成 docx 的 ParagraphChild[]
  * - text → TextRun（含 link 时再套一层 ExternalHyperlink）
  * - break → TextRun({ break: 1 })（行内 <br>）
- * - pageBreak → PageBreak run（行内 <page-break>，OOXML 输出 <w:br w:type="page"/>）
+ * - pageBreak → PageBreak run（行内 <wp-page-break>，OOXML 输出 <w:br w:type="page"/>）
  * - math → 行内 <m:oMath>（来自 ctx.mathOmml 的 OMML），转换失败退回 [math] 文本
  * - image：从 ctx.images 取已加载资产；缺失时按 onUnresolvedImage 决定 placeholder（用 alt 占位）/ skip
  */
