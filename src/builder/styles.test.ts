@@ -27,6 +27,32 @@ describe('default styles - 字体与字号', () => {
   })
 })
 
+describe('default styles - 语言 (<w:lang>)', () => {
+  // 守住「默认不破坏现有用户输出」：未传 language 时，styles.xml 不应出现 <w:lang>
+  it('未设置 language 时不输出 <w:lang>', async () => {
+    const xml = await getStylesXml('<p>x</p>')
+    expect(xml).not.toMatch(/<w:lang\b/)
+  })
+
+  it('value + eastAsia 写入 styles.xml', async () => {
+    const xml = await getStylesXml('<p>x</p>', {
+      language: { value: 'en-US', eastAsia: 'zh-CN' },
+    })
+    // 属性顺序由 docx 决定，分别断言两条以避免顺序耦合
+    expect(xml).toMatch(/<w:lang\b[^>]*\bw:val="en-US"/)
+    expect(xml).toMatch(/<w:lang\b[^>]*\bw:eastAsia="zh-CN"/)
+  })
+
+  it('仅 bidirectional 时只写 w:bidi，不写 w:val / w:eastAsia', async () => {
+    const xml = await getStylesXml('<p>x</p>', {
+      language: { bidirectional: 'ar-SA' },
+    })
+    expect(xml).toMatch(/<w:lang\b[^>]*\bw:bidi="ar-SA"/)
+    expect(xml).not.toMatch(/<w:lang\b[^>]*\bw:val=/)
+    expect(xml).not.toMatch(/<w:lang\b[^>]*\bw:eastAsia=/)
+  })
+})
+
 describe('Document metadata 写入 docProps/core.xml', () => {
   // 守住一个端到端：title / creator / description 透传给 docx Document → 生成器写入核心属性
   // 若 docx 库未来改了 metadata 字段名，会立即失败

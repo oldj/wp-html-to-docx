@@ -114,6 +114,19 @@ await htmlToDocx(html, {
   keywords: '财报, 2026, Q4',          // cp:keywords，逗号分隔
   lastModifiedBy: '李四',              // cp:lastModifiedBy，未设置时 docx 库默认写入 "Un-named"
 
+  // 默认字体（写入 styles.xml 的 <w:rPrDefault><w:rFonts/>）
+  defaultFont: 'Calibri',
+  defaultFontSize: 22,                 // 半磅，22 = 11pt
+
+  // 文档级默认语言（写入 styles.xml 的 <w:rPrDefault><w:lang/>）
+  // 影响 Word 的拼写检查 / 校对语言、East Asian 字体回退归属。
+  // 不传时不写入 <w:lang>，由 Word 使用打开端的默认值。
+  language: {
+    value: 'en-US',                    // <w:lang w:val>      西文 / 默认校对语言
+    eastAsia: 'zh-CN',                 // <w:lang w:eastAsia> 东亚字符语言（中文 Word 推荐）
+    // bidirectional: 'ar-SA',         // <w:lang w:bidi>     复杂文种 / RTL（按需）
+  },
+
   // 图片解析（见下文）
   imageResolver: undefined,
   onUnresolvedImage: 'skip',       // 'skip' | 'placeholder' | 'error'

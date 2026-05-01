@@ -85,6 +85,20 @@ export type HtmlToDocxOptions = {
   /** 默认字号（半磅，docx 单位）。22 = 11pt */
   defaultFontSize?: number
 
+  /**
+   * 文档级默认语言，写入 styles.xml 的 <w:rPrDefault><w:lang/>。
+   * 影响 Word 的拼写检查 / 校对语言、East Asian 字体回退归属等。
+   * - value:         → <w:lang w:val="...">       西文 / 默认校对语言（如 'en-US'）
+   * - eastAsia:      → <w:lang w:eastAsia="...">  东亚字符语言（如 'zh-CN'、'ja-JP'）
+   * - bidirectional: → <w:lang w:bidi="...">      复杂文种 / RTL 语言（如 'ar-SA'）
+   * 不传则不写入 <w:lang>，由 Word 使用其打开端默认。
+   */
+  language?: {
+    value?: string
+    eastAsia?: string
+    bidirectional?: string
+  }
+
   imageResolver?: ImageResolver
   /** 未提供 resolver 且非 data URL 时的兜底策略 */
   onUnresolvedImage?: 'skip' | 'placeholder' | 'error'
