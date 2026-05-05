@@ -148,7 +148,7 @@ describe('buildIr - 列表', () => {
     const { ir } = build('<ul><li><pre>code</pre>after</li></ul>')
     expect(ir).toHaveLength(3)
     expect(ir[0]).toMatchObject({ kind: 'list-item', inlines: [] })
-    expect(ir[1]).toEqual<Block>({ kind: 'pre', text: 'code' })
+    expect(ir[1]).toEqual<Block>({ kind: 'pre', text: 'code', indent: 720 })
     expect(ir[2]).toMatchObject({
       kind: 'list-continuation',
       level: 0,
@@ -167,7 +167,7 @@ describe('buildIr - 列表', () => {
       inlines: [{ kind: 'text', text: 'foo', style: {} }],
     })
     expect(ir[1]).toMatchObject({ kind: 'table' })
-    expect(ir[2]).toEqual<Block>({ kind: 'pre', text: 'code' })
+    expect(ir[2]).toEqual<Block>({ kind: 'pre', text: 'code', indent: 720 })
     expect(ir[3]).toMatchObject({
       kind: 'list-continuation',
       level: 0,
@@ -176,9 +176,7 @@ describe('buildIr - 列表', () => {
   })
 
   it('嵌套 li 内含 <table>：内层 li 占外层一个序号，table 紧随其后输出', () => {
-    const { ir } = build(
-      '<ul><li>a<ul><li>b<table><tr><td>x</td></tr></table></li></ul></li></ul>',
-    )
+    const { ir } = build('<ul><li>a<ul><li>b<table><tr><td>x</td></tr></table></li></ul></li></ul>')
     // 顺序: [外层 list-item('a', lv0), 内层 list-item('b', lv1), table]
     expect(ir).toHaveLength(3)
     expect(ir[0]).toMatchObject({ kind: 'list-item', ref: { level: 0 } })
@@ -212,7 +210,35 @@ describe('buildIr - 列表', () => {
     const { ir } = build('<ul><li><pre>line1\n  line2</pre></li></ul>')
     expect(ir).toHaveLength(2)
     expect(ir[0]).toMatchObject({ kind: 'list-item', inlines: [] })
-    expect(ir[1]).toEqual<Block>({ kind: 'pre', text: 'line1\n  line2' })
+    expect(ir[1]).toEqual<Block>({ kind: 'pre', text: 'line1\n  line2', indent: 720 })
+  })
+
+  it('li 内 standalone 块继承 list 缩进：table / pre / blockquote / hr 各带 indent=720（level 0）', () => {
+    // 防回归：list 内独立块视觉上应跟随列表缩进，否则飘到文档左边距
+    const { ir } = build(
+      '<ul><li>x<table><tr><td>y</td></tr></table><pre>p</pre><blockquote><p>q</p></blockquote><hr></li></ul>',
+    )
+    // [list-item('x'), table+indent, pre+indent, blockquote+indent, hr+indent]
+    expect(ir).toHaveLength(5)
+    expect(ir[1]).toMatchObject({ kind: 'table', indent: 720 })
+    expect(ir[2]).toMatchObject({ kind: 'pre', indent: 720 })
+    expect(ir[3]).toMatchObject({ kind: 'blockquote', indent: 720 })
+    expect(ir[4]).toMatchObject({ kind: 'hr', indent: 720 })
+  })
+
+  it('嵌套 li (level 1) 内的 standalone 块缩进 = 1440', () => {
+    const { ir } = build('<ul><li>a<ul><li>b<table><tr><td>x</td></tr></table></li></ul></li></ul>')
+    expect(ir).toHaveLength(3)
+    expect(ir[2]).toMatchObject({ kind: 'table', indent: 1440 })
+  })
+
+  it('顶层 standalone 块（不在 list 内）不带 indent', () => {
+    // 防回归：保证 indent 注入仅在 li 内发生，顶层用法不受影响
+    const { ir } = build('<table><tr><td>x</td></tr></table>')
+    expect(ir).toHaveLength(1)
+    expect(ir[0]).toMatchObject({ kind: 'table' })
+    if (ir[0]?.kind !== 'table') throw new Error('expected table')
+    expect(ir[0].indent).toBeUndefined()
   })
 
   it('li 内 <blockquote>：保持 blockquote 结构', () => {

@@ -92,6 +92,37 @@ describe('builder XML 断言 - 列表内软换行', () => {
     const numPrMatches = xml.match(/<w:numPr>/g) ?? []
     expect(numPrMatches.length).toBe(2)
   })
+
+  it('li 内 <table> 跟随列表缩进：产出 <w:tblInd w:w="720">，且 tblW 切到 auto 避免右溢出', async () => {
+    const xml = await getDocumentXml('<ul><li><table><tr><td>x</td></tr></table></li></ul>')
+    // 属性顺序由 docx 库决定，分别断言两个属性各自存在
+    const tblIndMatch = xml.match(/<w:tblInd\s[^/>]*\/>/)?.[0] ?? ''
+    expect(tblIndMatch).toContain('w:w="720"')
+    expect(tblIndMatch).toContain('w:type="dxa"')
+    // 切到 auto 宽：不应再出现 100% pct
+    expect(xml).not.toMatch(/<w:tblW[^>]*w:w="100%"/)
+    expect(xml).toMatch(/<w:tblW[^>]*w:type="auto"/)
+  })
+
+  it('顶层 <table>（不在 list 内）维持 100% pct 宽且无 tblInd', async () => {
+    const xml = await getDocumentXml('<table><tr><td>x</td></tr></table>')
+    expect(xml).toMatch(/<w:tblW[^>]*w:type="pct"[^>]*w:w="100%"/)
+    expect(xml).not.toMatch(/<w:tblInd/)
+  })
+
+  it('li 内 <pre> 与 <hr>：段落带 w:left=720 缩进', async () => {
+    const xml = await getDocumentXml('<ul><li><pre>code</pre><hr></li></ul>')
+    // 至少两段带 left=720（pre 一行 + hr 段）
+    const indentMatches = xml.match(/<w:ind[^>]*w:left="720"/g) ?? []
+    expect(indentMatches.length).toBeGreaterThanOrEqual(2)
+  })
+
+  it('li 内 <blockquote>：缩进叠加（720 自带 + 720 list = 1440）', async () => {
+    const xml = await getDocumentXml('<ul><li><blockquote><p>q</p></blockquote></li></ul>')
+    // 段落带 left=1440 + 灰边线
+    expect(xml).toMatch(/<w:ind[^>]*w:left="1440"/)
+    expect(xml).toMatch(/<w:left[^>]*w:color="CCCCCC"/)
+  })
 })
 
 describe('builder XML 断言 - blockquote 视觉一致性', () => {

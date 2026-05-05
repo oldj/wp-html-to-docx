@@ -38,12 +38,28 @@ type ListFrame = {
  * 注意：div / p / h1-h6 / section / article 等仍按 phrasing 容器递归 —— 这些是「内容包装器」，
  * 拍扁到当前 list-item 是符合预期的。
  */
-const LI_STANDALONE_BLOCK_TAGS: ReadonlySet<string> = new Set([
-  'table',
-  'pre',
-  'blockquote',
-  'hr',
-])
+const LI_STANDALONE_BLOCK_TAGS: ReadonlySet<string> = new Set(['table', 'pre', 'blockquote', 'hr'])
+
+/**
+ * 每层 list 的左缩进（twip）。与 builder/numbering.ts 的 INDENT_PER_LEVEL 数值一致；
+ * 这里独立维护一份是为了避免 IR 层反向依赖 builder 层 —— 若调整对齐策略需同步两处。
+ */
+const LIST_LEVEL_INDENT = 720
+
+/**
+ * 把 list 缩进附加到一个 standalone block 上。
+ * 仅 table / pre / hr / blockquote 持有 indent 字段；其他类型（如外部不该出现的）忽略。
+ */
+function attachListIndent(block: Block, indent: number): void {
+  if (
+    block.kind === 'table' ||
+    block.kind === 'pre' ||
+    block.kind === 'hr' ||
+    block.kind === 'blockquote'
+  ) {
+    block.indent = indent
+  }
+}
 
 export function buildIr(nodes: ParsedNode[], ctx: BuildContext): Block[] {
   return walkBlocks(nodes, ctx, [])
@@ -308,10 +324,15 @@ function walkListItem(
       if (LI_STANDALONE_BLOCK_TAGS.has(tag)) {
         // 必须独立的复杂块（table / pre / blockquote / hr）：关闭当前段，
         // 整体复用 emitBlockForElement 的产物，避免结构被内联拍扁。
-        // 紧随其后的内容（若有）会在下一次 flushSegments 时归入 list-continuation
+        // 紧随其后的内容（若有）会在下一次 flushSegments 时归入 list-continuation。
+        // 同时把 list 缩进透传给这些块，让它们视觉上跟随列表项缩进，
+        // 而不是飘到文档左边距 —— 与浏览器渲染 <li><table> 的直觉一致
         flushSegments()
         ensureFirstEmitted()
-        out.push(...emitBlockForElement(child, ctx, listStack))
+        const blocks = emitBlockForElement(child, ctx, listStack)
+        const levelIndent = LIST_LEVEL_INDENT * (frame.level + 1)
+        for (const b of blocks) attachListIndent(b, levelIndent)
+        out.push(...blocks)
         return
       }
       if (tag === 'math' || tag === 'wp-page-break') {

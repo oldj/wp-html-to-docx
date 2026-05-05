@@ -53,11 +53,16 @@ export type Block =
    * 渲染：作为独立段落，缩进对齐到 list 文本起始位置，但不带编号 / 项目符号。
    */
   | { kind: 'list-continuation'; inlines: Inline[]; level: number; align?: BlockAlign }
-  | { kind: 'blockquote'; children: Block[] }
-  /** pre 块完整保留空白与换行 */
-  | { kind: 'pre'; text: string }
-  | { kind: 'hr' }
-  | { kind: 'table'; rows: TableRow[] }
+  /**
+   * `indent` 为额外左缩进（twip），来自被嵌入 list 时由 walkListItem 注入。
+   * 顶层 blockquote 不带 indent；blockquote 自带的 720 视觉缩进由 builder 负责，
+   * 与此 indent 字段叠加（即 list 内 blockquote 的最终缩进 = 720 + level 缩进）。
+   */
+  | { kind: 'blockquote'; children: Block[]; indent?: number }
+  /** pre 块完整保留空白与换行；indent 同 blockquote 由 list 注入 */
+  | { kind: 'pre'; text: string; indent?: number }
+  | { kind: 'hr'; indent?: number }
+  | { kind: 'table'; rows: TableRow[]; indent?: number }
   | { kind: 'math'; mathml: string; display: 'inline' | 'block' }
   /** 块级分页符：来源 <hr class="page-break"> / <wp-page-break> / 块级元素 CSS page-break-* */
   | { kind: 'pageBreak' }

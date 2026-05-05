@@ -84,14 +84,16 @@ function appendBlock(block: Block, out: FileChild[], ctx: BuildContext): void {
       )
       return
     case 'blockquote':
-      for (const child of block.children) appendBlockquote(child, out, ctx)
+      // list 内 blockquote：把 block.indent（来自外层 list level）叠加到每个子段的引用缩进上
+      for (const child of block.children) appendBlockquote(child, out, ctx, block.indent)
       return
     case 'pre':
-      out.push(...preToParagraphs(block.text))
+      out.push(...preToParagraphs(block.text, block.indent))
       return
     case 'hr':
       out.push(
         new Paragraph({
+          indent: block.indent !== undefined ? { left: block.indent } : undefined,
           border: {
             bottom: { style: BorderStyle.SINGLE, size: 6, color: '999999' },
           },
@@ -131,16 +133,26 @@ function appendBlock(block: Block, out: FileChild[], ctx: BuildContext): void {
 }
 
 // blockquote 视觉样式：左缩进 + 左边线灰条
-const BLOCKQUOTE_INDENT = { left: 720 } as const
+const BLOCKQUOTE_BASE_INDENT = 720
 const BLOCKQUOTE_BORDER = {
   left: { style: BorderStyle.SINGLE, size: 12, color: 'CCCCCC', space: 8 },
 } as const
 
-function appendBlockquote(block: Block, out: FileChild[], ctx: BuildContext): void {
+/** 计算 blockquote 段落的最终左缩进：自有 720 + 外层 list 注入的 extraIndent（可叠加） */
+function blockquoteIndent(extra: number | undefined): { left: number } {
+  return { left: BLOCKQUOTE_BASE_INDENT + (extra ?? 0) }
+}
+
+function appendBlockquote(
+  block: Block,
+  out: FileChild[],
+  ctx: BuildContext,
+  extraIndent?: number,
+): void {
   if (block.kind === 'paragraph') {
     out.push(
       new Paragraph({
-        indent: BLOCKQUOTE_INDENT,
+        indent: blockquoteIndent(extraIndent),
         border: BLOCKQUOTE_BORDER,
         alignment: toAlignment(block.align),
         children: inlinesToRuns(block.inlines, ctx),
@@ -153,7 +165,7 @@ function appendBlockquote(block: Block, out: FileChild[], ctx: BuildContext): vo
     out.push(
       new Paragraph({
         heading: HEADING_MAP[block.level],
-        indent: BLOCKQUOTE_INDENT,
+        indent: blockquoteIndent(extraIndent),
         border: BLOCKQUOTE_BORDER,
         alignment: toAlignment(block.align),
         children: inlinesToRuns(block.inlines, ctx),
@@ -168,7 +180,7 @@ function appendBlockquote(block: Block, out: FileChild[], ctx: BuildContext): vo
     for (const line of lines) {
       out.push(
         new Paragraph({
-          indent: BLOCKQUOTE_INDENT,
+          indent: blockquoteIndent(extraIndent),
           border: BLOCKQUOTE_BORDER,
           children: [new TextRun({ text: line, font: 'Consolas' })],
         }),
@@ -177,7 +189,7 @@ function appendBlockquote(block: Block, out: FileChild[], ctx: BuildContext): vo
     return
   }
   if (block.kind === 'blockquote') {
-    for (const child of block.children) appendBlockquote(child, out, ctx)
+    for (const child of block.children) appendBlockquote(child, out, ctx, extraIndent)
     return
   }
   // list-item / table / hr / math / pageBreak：维持原渲染
@@ -186,12 +198,13 @@ function appendBlockquote(block: Block, out: FileChild[], ctx: BuildContext): vo
   appendBlock(block, out, ctx)
 }
 
-function preToParagraphs(text: string): Paragraph[] {
+function preToParagraphs(text: string, indent?: number): Paragraph[] {
   const trimmed = text.replace(/^\n/, '').replace(/\n$/, '')
   const lines = trimmed.length === 0 ? [''] : trimmed.split('\n')
   return lines.map(
     (line) =>
       new Paragraph({
+        indent: indent !== undefined ? { left: indent } : undefined,
         children: [new TextRun({ text: line, font: 'Consolas' })],
       }),
   )

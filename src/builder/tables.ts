@@ -11,6 +11,7 @@ import {
   WidthType,
   type FileChild,
   type ITableCellOptions,
+  type ITableOptions,
 } from 'docx'
 import type { Block, TableCell as IRCell, TableRow as IRRow } from '../types.js'
 import type { BuildContext } from '../ir/buildContext.js'
@@ -18,11 +19,21 @@ import { blocksToChildren } from './blocks.js'
 
 const HEADER_SHADING = 'EFEFEF'
 
-export function buildTable(rows: IRRow[], ctx: BuildContext): Table {
-  return new Table({
-    width: { size: 100, type: WidthType.PERCENTAGE },
-    rows: rows.map((row) => buildRow(row, ctx)),
-  })
+export function buildTable(rows: IRRow[], ctx: BuildContext, indent?: number): Table {
+  const indented = indent !== undefined && indent > 0
+  // 默认 100% 占满文本列；被嵌入 list 时切到 auto 由内容自适应宽度，
+  // 否则 tblInd + 100% 宽会让表格右溢出页面右边距
+  const opts: ITableOptions = indented
+    ? {
+        rows: rows.map((row) => buildRow(row, ctx)),
+        width: { size: 0, type: WidthType.AUTO },
+        indent: { size: indent, type: WidthType.DXA },
+      }
+    : {
+        rows: rows.map((row) => buildRow(row, ctx)),
+        width: { size: 100, type: WidthType.PERCENTAGE },
+      }
+  return new Table(opts)
 }
 
 function buildRow(row: IRRow, ctx: BuildContext): TableRow {
@@ -60,5 +71,5 @@ export function tableBlockToFileChild(
   block: Extract<Block, { kind: 'table' }>,
   ctx: BuildContext,
 ): FileChild {
-  return buildTable(block.rows, ctx)
+  return buildTable(block.rows, ctx, block.indent)
 }
