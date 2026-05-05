@@ -12,9 +12,13 @@ import { collectMath } from './ir/mathCollector.js'
 import { buildDocument } from './builder/buildDocument.js'
 import { pack } from './pack/pack.js'
 import type { HtmlToDocxOptions } from './options.js'
+import { VERSION } from './version.js'
+
+export { VERSION } from './version.js'
 
 export type {
   HtmlToDocxOptions,
+  Logger,
   PageOptions,
   PageMargin,
   PaperSize,
@@ -44,6 +48,14 @@ export async function htmlToDocument(
   // `= {}` 默认值仅在参数为 undefined 时触发；JS 调用方显式传 null 会让
   // 后续 `ctx.options.xxx` 抛不可定位的 TypeError。这里在边界统一兜底。
   const opts = options ?? {}
+  // logger 钩子：调用方可借此确认实际加载的版本，排查包缓存 / 旧版误用问题
+  if (opts.logger !== undefined) {
+    try {
+      opts.logger('info', `wp-html-to-docx v${VERSION}`)
+    } catch {
+      // 用户日志实现自身抛错不应阻断主流程
+    }
+  }
   const nodes = parseHtmlBodyChildren(html)
   const ctx = new BuildContext(opts)
   const ir = buildIr(nodes, ctx)

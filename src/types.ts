@@ -47,6 +47,12 @@ export type Block =
   | { kind: 'heading'; level: 1 | 2 | 3 | 4 | 5 | 6; inlines: Inline[]; align?: BlockAlign }
   /** 列表项被平铺：嵌套 list 在 IR 层产出多个 list-item，按出现顺序排列，level 区分缩进 */
   | { kind: 'list-item'; inlines: Inline[]; ref: ListRef; align?: BlockAlign }
+  /**
+   * 列表项内的「延续段落」。
+   * 来源：同一个 <li> 内的第二个及之后的块级段落（如多 <p>、块后裸文本等）。
+   * 渲染：作为独立段落，缩进对齐到 list 文本起始位置，但不带编号 / 项目符号。
+   */
+  | { kind: 'list-continuation'; inlines: Inline[]; level: number; align?: BlockAlign }
   | { kind: 'blockquote'; children: Block[] }
   /** pre 块完整保留空白与换行 */
   | { kind: 'pre'; text: string }

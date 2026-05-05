@@ -15,6 +15,7 @@ import type { BuildContext } from '../ir/buildContext.js'
 import { inlinesToRuns } from './runs.js'
 import { tableBlockToFileChild } from './tables.js'
 import { blockOmmlToImported, ommlToImported } from './ommlImport.js'
+import { INDENT_PER_LEVEL } from './numbering.js'
 
 const ALIGN_MAP: Record<BlockAlign, (typeof AlignmentType)[keyof typeof AlignmentType]> = {
   left: AlignmentType.LEFT,
@@ -67,6 +68,16 @@ function appendBlock(block: Block, out: FileChild[], ctx: BuildContext): void {
       out.push(
         new Paragraph({
           numbering: { reference: block.ref.reference, level: block.ref.level },
+          alignment: toAlignment(block.align),
+          children: inlinesToRuns(block.inlines, ctx),
+        }),
+      )
+      return
+    case 'list-continuation':
+      // 延续段落：与列表项文本左对齐，但不带 numbering（无项目符号 / 编号）
+      out.push(
+        new Paragraph({
+          indent: { left: INDENT_PER_LEVEL * (block.level + 1) },
           alignment: toAlignment(block.align),
           children: inlinesToRuns(block.inlines, ctx),
         }),

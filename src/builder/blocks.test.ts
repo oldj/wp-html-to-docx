@@ -56,6 +56,44 @@ describe('builder XML 断言 - 文本块', () => {
   })
 })
 
+describe('builder XML 断言 - 列表内软换行', () => {
+  it('li 内多 <p>：合并为单段，段间产生 <w:br/>，编号仅出现一次', async () => {
+    const xml = await getDocumentXml(
+      '<ol><li><p>first</p><p>second</p></li><li><p>third</p></li></ol>',
+    )
+    // numPr 段（带编号的列表项）共 2 个：每个 <li> 一个
+    const numPrMatches = xml.match(/<w:numPr>/g) ?? []
+    expect(numPrMatches.length).toBe(2)
+    // 第一个 li 内部出现至少一个软换行 <w:br/>（区分于 <w:br w:type="page"/>）
+    expect(xml).toMatch(/<w:br\s*\/>|<w:br(?![^>]*w:type)/)
+    expect(xml).toContain('first')
+    expect(xml).toContain('second')
+    expect(xml).toContain('third')
+  })
+
+  it('li 内裸文本 + <p>：仍是单段 list-item，含软换行', async () => {
+    const xml = await getDocumentXml('<ul><li>foo<p>bar</p></li></ul>')
+    const numPrMatches = xml.match(/<w:numPr>/g) ?? []
+    expect(numPrMatches.length).toBe(1)
+    expect(xml).toMatch(/<w:br\s*\/>|<w:br(?![^>]*w:type)/)
+    expect(xml).toContain('foo')
+    expect(xml).toContain('bar')
+  })
+
+  it('li 内 <table>：端到端真正产生 <w:tbl>，且外层 list 编号正常', async () => {
+    // 防回归：曾经 li 内 <table> 被错误当作 phrasing 容器拍扁，整个表格结构丢失
+    const xml = await getDocumentXml(
+      '<ol><li><table><tr><td>cell</td></tr></table></li><li>next</li></ol>',
+    )
+    expect(xml).toContain('<w:tbl')
+    expect(xml).toContain('cell')
+    expect(xml).toContain('next')
+    // 两个 li 都应当带 numbering（外层空占位 + 第二项）
+    const numPrMatches = xml.match(/<w:numPr>/g) ?? []
+    expect(numPrMatches.length).toBe(2)
+  })
+})
+
 describe('builder XML 断言 - blockquote 视觉一致性', () => {
   it('blockquote 内 heading：仍带左缩进 + 左边线灰条', async () => {
     // 防回归：曾经 <blockquote><h2/></blockquote> 标题被走 appendBlock，丢失引用块视觉

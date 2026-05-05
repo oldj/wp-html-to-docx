@@ -57,6 +57,17 @@ export type ImageResolverResult = {
 
 export type ImageResolver = (src: string) => Promise<ImageResolverResult>
 
+/**
+ * 简易日志器签名。库在执行入口会以 `info` 级别打印当前版本号，
+ * 便于使用方确认实际加载的是哪一版（用于排查"装了旧版"的疑问）。
+ * 第一个参数为 message，后续 args 透传给宿主日志实现。
+ */
+export type Logger = (
+  level: 'debug' | 'info' | 'warn' | 'error',
+  message: string,
+  ...args: unknown[]
+) => void
+
 export type HtmlToDocxOptions = {
   page?: PageOptions
   header?: HeaderFooterValue
@@ -110,6 +121,14 @@ export type HtmlToDocxOptions = {
    * 注意：<pre> 块内空白本就完全保留，不受此选项影响。
    */
   preserveWhitespace?: boolean
+
+  /**
+   * 可选日志钩子。提供后，库在执行入口会调用一次：
+   *   logger('info', `wp-html-to-docx vX.Y.Z`)
+   * 用于在调用方排查实际装载的版本（例如怀疑包管理器命中了缓存中的旧版时）。
+   * 不提供则完全静默，不会向 console 写任何内容。
+   */
+  logger?: Logger
 }
 
 /** 单点声明的默认值，便于覆盖与测试 */

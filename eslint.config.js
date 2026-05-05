@@ -7,6 +7,16 @@ export default tseslint.config(
   {
     ignores: ['dist/**', 'node_modules/**', 'coverage/**'],
   },
+  {
+    // 工具脚本运行在 Node 环境，开放 Node 全局对象
+    files: ['scripts/**/*.mjs', 'scripts/**/*.js'],
+    languageOptions: {
+      globals: {
+        console: 'readonly',
+        process: 'readonly',
+      },
+    },
+  },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
