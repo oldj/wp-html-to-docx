@@ -5,8 +5,8 @@ import { AlignmentType, LevelFormat, type ILevelsOptions } from 'docx'
 
 const MAX_LEVELS = 8
 /** 每层缩进的 twip（约 0.5 英寸 / 720 twip） */
-const INDENT_PER_LEVEL = 720
-const HANGING_INDENT = 360
+export const INDENT_PER_LEVEL = 720
+export const HANGING_INDENT = 360
 
 /** 无序列表层级模板：所有层均为 bullet */
 export function bulletLevels(): ILevelsOptions[] {

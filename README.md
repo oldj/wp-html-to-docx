@@ -85,57 +85,90 @@ const buffer = await Packer.toBuffer(doc)
 ```ts
 await htmlToDocx(html, {
   page: {
-    size: 'A4',                    // 'A4' | 'A3' | 'A5' | 'Letter' | 'Legal' | 'Tabloid' | { width, height, unit }
-    orientation: 'portrait',       // 'portrait' | 'landscape'
+    size: 'A4', // 'A4' | 'A3' | 'A5' | 'Letter' | 'Legal' | 'Tabloid' | { width, height, unit }
+    orientation: 'portrait', // 'portrait' | 'landscape'
     margin: {
-      top: 25.4, right: 25.4, bottom: 25.4, left: 25.4,
-      header: 12.7, footer: 12.7,
-      unit: 'mm',                  // 'mm' | 'in' | 'pt'
+      top: 25.4,
+      right: 25.4,
+      bottom: 25.4,
+      left: 25.4,
+      header: 12.7,
+      footer: 12.7,
+      unit: 'mm', // 'mm' | 'in' | 'pt'
     },
   },
 
-  header: '报告标题',                // 字符串 或 { left, center, right }
+  header: '报告标题', // 字符串 或 { left, center, right }
   footer: { left: '机密', right: '2026' },
 
   pageNumber: {
     enabled: true,
-    start: 1,                      // 起始编号
-    format: 'decimal',             // 'decimal' | 'upperRoman' | 'lowerRoman' | 'upperLetter' | 'lowerLetter'
-    position: 'footer-center',     // header/footer × left/center/right 共 6 种位置
+    start: 1, // 起始编号
+    format: 'decimal', // 'decimal' | 'upperRoman' | 'lowerRoman' | 'upperLetter' | 'lowerLetter'
+    position: 'footer-center', // header/footer × left/center/right 共 6 种位置
     template: '第 {PAGE} 页 / 共 {TOTAL} 页',
   },
 
   // 文档元数据（写入 docProps/core.xml，对应 OOXML core properties；
   // 在 Word 的「文件 → 信息」面板里可见与编辑）
-  title: '我的文档',                   // dc:title
-  creator: '张三',                     // dc:creator —— 即「作者」字段（Word UI 显示为 Author）
-  description: '描述',                 // dc:description
-  subject: '主题',                     // dc:subject
-  keywords: '财报, 2026, Q4',          // cp:keywords，逗号分隔
-  lastModifiedBy: '李四',              // cp:lastModifiedBy，未设置时 docx 库默认写入 "Un-named"
+  title: '我的文档', // dc:title
+  creator: '张三', // dc:creator —— 即「作者」字段（Word UI 显示为 Author）
+  description: '描述', // dc:description
+  subject: '主题', // dc:subject
+  keywords: '财报, 2026, Q4', // cp:keywords，逗号分隔
+  lastModifiedBy: '李四', // cp:lastModifiedBy，未设置时 docx 库默认写入 "Un-named"
 
   // 默认字体（写入 styles.xml 的 <w:rPrDefault><w:rFonts/>）
   defaultFont: 'Calibri',
-  defaultFontSize: 22,                 // 半磅，22 = 11pt
+  defaultFontSize: 22, // 半磅，22 = 11pt
 
   // 文档级默认语言（写入 styles.xml 的 <w:rPrDefault><w:lang/>）
   // 影响 Word 的拼写检查 / 校对语言、East Asian 字体回退归属。
   // 不传时不写入 <w:lang>，由 Word 使用打开端的默认值。
   language: {
-    value: 'en-US',                    // <w:lang w:val>      西文 / 默认校对语言
-    eastAsia: 'zh-CN',                 // <w:lang w:eastAsia> 东亚字符语言（中文 Word 推荐）
+    value: 'en-US', // <w:lang w:val>      西文 / 默认校对语言
+    eastAsia: 'zh-CN', // <w:lang w:eastAsia> 东亚字符语言（中文 Word 推荐）
     // bidirectional: 'ar-SA',         // <w:lang w:bidi>     复杂文种 / RTL（按需）
   },
 
   // 图片解析（见下文）
   imageResolver: undefined,
-  onUnresolvedImage: 'skip',       // 'skip' | 'placeholder' | 'error'
+  onUnresolvedImage: 'skip', // 'skip' | 'placeholder' | 'error'
+
+  // 表格默认单元格内边距（对应 OOXML <w:tblCellMar>，应用于所有单元格）
+  // 不传时使用库内置默认：左右 5pt + 上下 2pt，避免 docx 默认 0 内边距导致单元格紧贴。
+  // HTML <table cellpadding="N">（N 为像素）会覆盖此默认，作用于该表所有四边。
+  // 当前不解析 td/th 上的 CSS padding。
+  tableCellMargin: { top: 2, right: 5, bottom: 2, left: 5, unit: 'pt' },
 
   // 是否保留文本中的连续空格（含全角空格 U+3000、NBSP 等）
   // 含换行/Tab 的空白序列仍会折叠为单空格，避免格式化 HTML 源里的缩进/换行被当成内容
   preserveWhitespace: false,
+
+  // 可选日志钩子。提供后，库在执行入口会以 'info' 级别打印一行版本号，
+  // 便于排查"是不是装到了旧版"。不提供则完全静默。
+  logger: (level, message, ...args) => {
+    // level: 'debug' | 'info' | 'warn' | 'error'
+    console[level === 'debug' ? 'log' : level](message, ...args)
+  },
 })
 ```
+
+### 确认运行时版本
+
+库导出常量 `VERSION`，与 `package.json` 同步（构建时自动生成）。两种确认方式：
+
+```ts
+import { VERSION, htmlToDocx } from 'wp-html-to-docx'
+
+console.log(VERSION) // 直接读取
+
+await htmlToDocx(html, {
+  logger: (_level, msg) => console.log(msg),
+}) // 控制台会出现：wp-html-to-docx v0.2.0
+```
+
+适合排查包管理器命中了缓存里的旧版、`npm link` 后忘了 `npm run build` 等情况。
 
 ### 图片处理
 
@@ -146,11 +179,11 @@ await htmlToDocx(html, {
 
 未提供 `imageResolver` 时，外链图片按 `onUnresolvedImage` 处理：
 
-| 策略 | 行为 |
-|------|------|
+| 策略           | 行为                     |
+| -------------- | ------------------------ |
 | `skip`（默认） | 静默跳过，不输出任何内容 |
-| `placeholder` | 用 `alt` 文本占位 |
-| `error` | 抛出错误 |
+| `placeholder`  | 用 `alt` 文本占位        |
+| `error`        | 抛出错误                 |
 
 #### Node.js 示例（用 fetch）
 
@@ -196,27 +229,31 @@ await htmlToDocx(html, {
 - 设 `preserveWhitespace: true` 后，连续的半角/全角空格、NBSP 等保留原样；含换行/Tab 的空白仍折叠为单空格
 - HTML 实体（`&amp;` `&lt;` `&nbsp;` `&#x4e2d;` 等）自动解码
 - `<a>` 与内联格式可任意组合（如 `<a><strong>x</strong></a>`）
+- `<li>` 内含多个 `<p>`（或块级 + 裸文本）时，合并为单个列表项段落，段间以软换行 `<w:br/>` 分隔。这样**编号 / 项目符号只在首段出现一次**，后续段在同一项内自动换行并对齐到列表文本起点（等同 Word 里的 Shift+Enter）。OOXML 的 `<w:p>` 一旦带 numbering 引用就必然产生新编号，所以无法用"独立段落"语义来表达"同一编号下多行"——这是 Word 列表语义的固有约束
+- `<li>` 内的 `<table>` / `<pre>` / `<blockquote>` / `<hr>` 作为**独立块**输出，结构原样保留（表格的 `<tr>/<td>`、pre 的等宽与空白、blockquote 的左边线视觉等都不会被拍扁）。这些块会**跟随列表项的层级缩进**：
+  - `<table>`：注入 `<w:tblInd>` 与列表层级一致的左缩进；同时把 `tblW` 从 `pct 100%` 切到 `auto`，避免缩进 + 满宽导致表格右溢出页面边距
+  - `<pre>` / `<hr>`：每个段落带相同的 `w:left` 缩进
+  - `<blockquote>`：自带 720 缩进与外层 list 缩进**叠加**（嵌套缩进语义自洽，level 0 下最终为 1440）
+  - 缩进值由 list 层级决定（每层 720 twip），等同 list-item 的文本起点位置，与浏览器渲染 `<li><table>` 的直觉一致
 
 ## 内联 `style` 属性
 
 支持 `<span style="...">` / `<p style="...">` 等元素上的常用 CSS 属性，自动叠加到对应 docx 样式。**不**实现完整的 CSS 选择器引擎、cascade 与 specificity——只解析直接出现在元素上的内联声明。
 
-| CSS 属性 | docx 映射 | 说明 |
-|---|---|---|
-| `color` | `TextRun.color` | 命名色 / `#RGB` / `#RRGGBB` / `rgb()` |
-| `background` / `background-color` | `TextRun.shading`（CLEAR + fill） | 同上；只取首个颜色 token |
-| `font-size` | `TextRun.size` | `pt` / `px` / `em` / `rem` / `%`；`em` 以 12pt 为基准 |
-| `font-family` | `TextRun.font` | 取首项去引号 |
-| `font-weight: bold` 或数值 ≥ 600 | `bold: true` | 仅加法（不会用 `normal` 取消父级 bold） |
-| `font-style: italic` | `italics: true` | 同上 |
-| `text-decoration: underline / line-through` | `underline` / `strike` | 支持多个值组合 |
-| `text-align`（块级元素） | `Paragraph.alignment` | left / right / center / justify |
+| CSS 属性                                    | docx 映射                         | 说明                                                  |
+| ------------------------------------------- | --------------------------------- | ----------------------------------------------------- |
+| `color`                                     | `TextRun.color`                   | 命名色 / `#RGB` / `#RRGGBB` / `rgb()`                 |
+| `background` / `background-color`           | `TextRun.shading`（CLEAR + fill） | 同上；只取首个颜色 token                              |
+| `font-size`                                 | `TextRun.size`                    | `pt` / `px` / `em` / `rem` / `%`；`em` 以 12pt 为基准 |
+| `font-family`                               | `TextRun.font`                    | 取首项去引号                                          |
+| `font-weight: bold` 或数值 ≥ 600            | `bold: true`                      | 仅加法（不会用 `normal` 取消父级 bold）               |
+| `font-style: italic`                        | `italics: true`                   | 同上                                                  |
+| `text-decoration: underline / line-through` | `underline` / `strike`            | 支持多个值组合                                        |
+| `text-align`（块级元素）                    | `Paragraph.alignment`             | left / right / center / justify                       |
 
 ```html
 <p style="text-align: center">
-  <span style="color: #d33; background-color: yellow; font-size: 14pt">
-    强调文本
-  </span>
+  <span style="color: #d33; background-color: yellow; font-size: 14pt"> 强调文本 </span>
 </p>
 ```
 
@@ -230,21 +267,20 @@ await htmlToDocx(html, {
 
 ```html
 <p>第一页内容</p>
-<wp-page-break>
-<p>第二页内容</p>
+<wp-page-break> <p>第二页内容</p></wp-page-break>
 ```
 
 伪自闭合写法 `<wp-page-break/>` 与 `<wp-page-break />` 也能识别。可以放在段内（与文本同段）：
 
 ```html
-<p>上半段<wp-page-break/>下半段在新一页继续。</p>
+<p>上半段<wp-page-break />下半段在新一页继续。</p>
 ```
 
 ### 2. `<hr class="page-break">` 替代横线为分页
 
 ```html
 <p>章节一</p>
-<hr class="page-break">
+<hr class="page-break" />
 <p>章节二</p>
 ```
 
@@ -270,7 +306,13 @@ class 列表中包含 `page-break` token 即触发（`<hr class="foo page-break 
 
 ```html
 <!-- 行内：与文本同段 -->
-<p>勾股定理 <math><msup><mi>a</mi><mn>2</mn></msup><mo>+</mo>...</math>。</p>
+<p>
+  勾股定理
+  <math
+    ><msup><mi>a</mi><mn>2</mn></msup
+    ><mo>+</mo>...</math
+  >。
+</p>
 
 <!-- 块级：独立成段，居中（Word 对显示式公式的默认行为） -->
 <math display="block">
@@ -312,10 +354,7 @@ npm install mathml2omml
 import { htmlToDocx, htmlToDocument } from 'wp-html-to-docx'
 import type { HtmlToDocxOptions } from 'wp-html-to-docx'
 
-declare function htmlToDocx(
-  html: string,
-  options?: HtmlToDocxOptions,
-): Promise<Uint8Array>
+declare function htmlToDocx(html: string, options?: HtmlToDocxOptions): Promise<Uint8Array>
 
 declare function htmlToDocument(
   html: string,

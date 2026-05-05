@@ -47,11 +47,27 @@ export type Block =
   | { kind: 'heading'; level: 1 | 2 | 3 | 4 | 5 | 6; inlines: Inline[]; align?: BlockAlign }
   /** 列表项被平铺：嵌套 list 在 IR 层产出多个 list-item，按出现顺序排列，level 区分缩进 */
   | { kind: 'list-item'; inlines: Inline[]; ref: ListRef; align?: BlockAlign }
-  | { kind: 'blockquote'; children: Block[] }
-  /** pre 块完整保留空白与换行 */
-  | { kind: 'pre'; text: string }
-  | { kind: 'hr' }
-  | { kind: 'table'; rows: TableRow[] }
+  /**
+   * 列表项内的「延续段落」。
+   * 来源：同一个 <li> 内的第二个及之后的块级段落（如多 <p>、块后裸文本等）。
+   * 渲染：作为独立段落，缩进对齐到 list 文本起始位置，但不带编号 / 项目符号。
+   */
+  | { kind: 'list-continuation'; inlines: Inline[]; level: number; align?: BlockAlign }
+  /**
+   * `indent` 为额外左缩进（twip），来自被嵌入 list 时由 walkListItem 注入。
+   * 顶层 blockquote 不带 indent；blockquote 自带的 720 视觉缩进由 builder 负责，
+   * 与此 indent 字段叠加（即 list 内 blockquote 的最终缩进 = 720 + level 缩进）。
+   */
+  | { kind: 'blockquote'; children: Block[]; indent?: number }
+  /** pre 块完整保留空白与换行；indent 同 blockquote 由 list 注入 */
+  | { kind: 'pre'; text: string; indent?: number }
+  | { kind: 'hr'; indent?: number }
+  /**
+   * `cellPaddingPx`：来自 HTML `<table cellpadding="N">`（像素，HTML 历史属性）。
+   * 在 builder 阶段优先于 options.tableCellMargin。未指定时为 undefined，
+   * builder 退回到 options 默认值。
+   */
+  | { kind: 'table'; rows: TableRow[]; indent?: number; cellPaddingPx?: number }
   | { kind: 'math'; mathml: string; display: 'inline' | 'block' }
   /** 块级分页符：来源 <hr class="page-break"> / <wp-page-break> / 块级元素 CSS page-break-* */
   | { kind: 'pageBreak' }

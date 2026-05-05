@@ -62,29 +62,57 @@ describe('buildIr - 列表', () => {
     })
   })
 
-  it('li 内多个块级子节点展平时保留文本边界', () => {
+  it('li 内多个 <p>：合并为单个 list-item，段间用软换行连接（编号仅一次）', () => {
     const { ir } = build('<ul><li><p>one</p><p>two</p></li></ul>')
+    expect(ir).toHaveLength(1)
     expect(ir[0]).toMatchObject({
       kind: 'list-item',
-      inlines: [{ kind: 'text', text: 'one two', style: {} }],
+      inlines: [
+        { kind: 'text', text: 'one', style: {} },
+        { kind: 'break' },
+        { kind: 'text', text: 'two', style: {} },
+      ],
     })
   })
 
-  it('li 内块级 + 紧跟裸文本时保留文本边界', () => {
-    // <p>foo</p>bar 这种「块级后接裸文本」的边界，曾被遗漏导致拼成 "foobar"
+  it('li 内块级 + 紧跟裸文本：单段 list-item，段间用软换行', () => {
     const { ir } = build('<ul><li><p>foo</p>bar</li></ul>')
+    expect(ir).toHaveLength(1)
     expect(ir[0]).toMatchObject({
       kind: 'list-item',
-      inlines: [{ kind: 'text', text: 'foo bar', style: {} }],
+      inlines: [
+        { kind: 'text', text: 'foo', style: {} },
+        { kind: 'break' },
+        { kind: 'text', text: 'bar', style: {} },
+      ],
     })
   })
 
-  it('li 内裸文本 + 紧跟块级时保留文本边界', () => {
-    // 反向边界：foo<p>bar</p>，验证两端任一为块级都会插入分隔
+  it('li 内裸文本 + 紧跟块级：单段 list-item，段间用软换行', () => {
     const { ir } = build('<ul><li>foo<p>bar</p></li></ul>')
+    expect(ir).toHaveLength(1)
     expect(ir[0]).toMatchObject({
       kind: 'list-item',
-      inlines: [{ kind: 'text', text: 'foo bar', style: {} }],
+      inlines: [
+        { kind: 'text', text: 'foo', style: {} },
+        { kind: 'break' },
+        { kind: 'text', text: 'bar', style: {} },
+      ],
+    })
+  })
+
+  it('嵌套 list 内层 li 含多 <p>：内层 list-item 的多段也用软换行合并', () => {
+    const { ir } = build('<ul><li>a<ul><li><p>x</p><p>y</p></li></ul></li></ul>')
+    // 期望: [list-item('a', lv0), list-item([x, break, y], lv1)]
+    expect(ir).toHaveLength(2)
+    expect(ir[1]).toMatchObject({
+      kind: 'list-item',
+      ref: { level: 1 },
+      inlines: [
+        { kind: 'text', text: 'x', style: {} },
+        { kind: 'break' },
+        { kind: 'text', text: 'y', style: {} },
+      ],
     })
   })
 
@@ -101,16 +129,163 @@ describe('buildIr - 列表', () => {
     expect(ctx.numbering).toHaveLength(1)
   })
 
-  it('嵌套 ul 被 div 包裹 + 同级文本：嵌套列表抽出，文本仍在 li.inlines', () => {
-    const { ir } = build('<ul><li>foo<div><ul><li>x</li></ul></div>baz</li></ul>')
-    // 外层 li 含 'foo baz'，内层 li 含 'x'
-    expect(ir).toHaveLength(2)
+  it('li 内 3 个 <p>：合并为单 list-item，含 2 个软换行（验证 break 间隔，不只是首尾）', () => {
+    const { ir } = build('<ul><li><p>a</p><p>b</p><p>c</p></li></ul>')
+    expect(ir).toHaveLength(1)
     if (ir[0]?.kind !== 'list-item') throw new Error('expected list-item')
-    // 'foo' 在 div 之前 + 'baz' 在 div 之后，中间分别由 block-boundary 插入空格
-    expect(ir[0].inlines).toEqual([{ kind: 'text', text: 'foo baz', style: {} }])
+    const breakCount = ir[0].inlines.filter((i) => i.kind === 'break').length
+    expect(breakCount).toBe(2)
+    expect(ir[0].inlines).toEqual([
+      { kind: 'text', text: 'a', style: {} },
+      { kind: 'break' },
+      { kind: 'text', text: 'b', style: {} },
+      { kind: 'break' },
+      { kind: 'text', text: 'c', style: {} },
+    ])
+  })
+
+  it('li 内 <pre> + 后续文本：拆为空 list-item / pre / list-continuation（与 hr 路径对称）', () => {
+    const { ir } = build('<ul><li><pre>code</pre>after</li></ul>')
+    expect(ir).toHaveLength(3)
+    expect(ir[0]).toMatchObject({ kind: 'list-item', inlines: [] })
+    expect(ir[1]).toEqual<Block>({ kind: 'pre', text: 'code', indent: 720 })
+    expect(ir[2]).toMatchObject({
+      kind: 'list-continuation',
+      level: 0,
+      inlines: [{ kind: 'text', text: 'after', style: {} }],
+    })
+  })
+
+  it('li 内连续两个 standalone 块：均独立产出，不互相吞并', () => {
+    // 验证一个 standalone 块结束后，下一个 standalone 块的 ensureFirstEmitted 不会再插入空占位
+    const { ir } = build(
+      '<ul><li>foo<table><tr><td>x</td></tr></table><pre>code</pre>bar</li></ul>',
+    )
+    expect(ir).toHaveLength(4)
+    expect(ir[0]).toMatchObject({
+      kind: 'list-item',
+      inlines: [{ kind: 'text', text: 'foo', style: {} }],
+    })
+    expect(ir[1]).toMatchObject({ kind: 'table' })
+    expect(ir[2]).toEqual<Block>({ kind: 'pre', text: 'code', indent: 720 })
+    expect(ir[3]).toMatchObject({
+      kind: 'list-continuation',
+      level: 0,
+      inlines: [{ kind: 'text', text: 'bar', style: {} }],
+    })
+  })
+
+  it('嵌套 li 内含 <table>：内层 li 占外层一个序号，table 紧随其后输出', () => {
+    const { ir } = build('<ul><li>a<ul><li>b<table><tr><td>x</td></tr></table></li></ul></li></ul>')
+    // 顺序: [外层 list-item('a', lv0), 内层 list-item('b', lv1), table]
+    expect(ir).toHaveLength(3)
+    expect(ir[0]).toMatchObject({ kind: 'list-item', ref: { level: 0 } })
+    expect(ir[1]).toMatchObject({ kind: 'list-item', ref: { level: 1 } })
+    expect(ir[2]).toMatchObject({ kind: 'table' })
+  })
+
+  it('li 内 <table>：保持表格结构，外层 li 占位空 list-item', () => {
+    const { ir } = build('<ul><li><table><tr><td>x</td></tr></table></li></ul>')
+    expect(ir).toHaveLength(2)
+    expect(ir[0]).toMatchObject({ kind: 'list-item', inlines: [] })
+    expect(ir[1]).toMatchObject({ kind: 'table' })
+  })
+
+  it('li 内含文本 + <table> + 文本：拆为 list-item / table / list-continuation', () => {
+    const { ir } = build('<ul><li>foo<table><tr><td>x</td></tr></table>bar</li></ul>')
+    expect(ir).toHaveLength(3)
+    expect(ir[0]).toMatchObject({
+      kind: 'list-item',
+      inlines: [{ kind: 'text', text: 'foo', style: {} }],
+    })
+    expect(ir[1]).toMatchObject({ kind: 'table' })
+    expect(ir[2]).toMatchObject({
+      kind: 'list-continuation',
+      level: 0,
+      inlines: [{ kind: 'text', text: 'bar', style: {} }],
+    })
+  })
+
+  it('li 内 <pre>：保持 pre 结构，不被拍扁为内联', () => {
+    const { ir } = build('<ul><li><pre>line1\n  line2</pre></li></ul>')
+    expect(ir).toHaveLength(2)
+    expect(ir[0]).toMatchObject({ kind: 'list-item', inlines: [] })
+    expect(ir[1]).toEqual<Block>({ kind: 'pre', text: 'line1\n  line2', indent: 720 })
+  })
+
+  it('li 内 standalone 块继承 list 缩进：table / pre / blockquote / hr 各带 indent=720（level 0）', () => {
+    // 防回归：list 内独立块视觉上应跟随列表缩进，否则飘到文档左边距
+    const { ir } = build(
+      '<ul><li>x<table><tr><td>y</td></tr></table><pre>p</pre><blockquote><p>q</p></blockquote><hr></li></ul>',
+    )
+    // [list-item('x'), table+indent, pre+indent, blockquote+indent, hr+indent]
+    expect(ir).toHaveLength(5)
+    expect(ir[1]).toMatchObject({ kind: 'table', indent: 720 })
+    expect(ir[2]).toMatchObject({ kind: 'pre', indent: 720 })
+    expect(ir[3]).toMatchObject({ kind: 'blockquote', indent: 720 })
+    expect(ir[4]).toMatchObject({ kind: 'hr', indent: 720 })
+  })
+
+  it('嵌套 li (level 1) 内的 standalone 块缩进 = 1440', () => {
+    const { ir } = build('<ul><li>a<ul><li>b<table><tr><td>x</td></tr></table></li></ul></li></ul>')
+    expect(ir).toHaveLength(3)
+    expect(ir[2]).toMatchObject({ kind: 'table', indent: 1440 })
+  })
+
+  it('顶层 standalone 块（不在 list 内）不带 indent', () => {
+    // 防回归：保证 indent 注入仅在 li 内发生，顶层用法不受影响
+    const { ir } = build('<table><tr><td>x</td></tr></table>')
+    expect(ir).toHaveLength(1)
+    expect(ir[0]).toMatchObject({ kind: 'table' })
+    if (ir[0]?.kind !== 'table') throw new Error('expected table')
+    expect(ir[0].indent).toBeUndefined()
+  })
+
+  it('<table cellpadding="N"> 在 IR 中保留为 cellPaddingPx 字段（像素）', () => {
+    const { ir } = build('<table cellpadding="8"><tr><td>x</td></tr></table>')
+    expect(ir[0]).toMatchObject({ kind: 'table', cellPaddingPx: 8 })
+  })
+
+  it('cellpadding 缺省 / 非法值：cellPaddingPx 为 undefined（让 builder 走 options 默认）', () => {
+    expect(build('<table><tr><td>x</td></tr></table>').ir[0]).not.toHaveProperty('cellPaddingPx')
+    expect(build('<table cellpadding="abc"><tr><td>x</td></tr></table>').ir[0]).not.toHaveProperty(
+      'cellPaddingPx',
+    )
+    expect(build('<table cellpadding="-3"><tr><td>x</td></tr></table>').ir[0]).not.toHaveProperty(
+      'cellPaddingPx',
+    )
+  })
+
+  it('li 内 <blockquote>：保持 blockquote 结构', () => {
+    const { ir } = build('<ul><li>foo<blockquote><p>q</p></blockquote></li></ul>')
+    expect(ir).toHaveLength(2)
+    expect(ir[0]).toMatchObject({
+      kind: 'list-item',
+      inlines: [{ kind: 'text', text: 'foo', style: {} }],
+    })
+    expect(ir[1]).toMatchObject({ kind: 'blockquote' })
+  })
+
+  it('li 内 <hr class="page-break">：生成分页符块而非吞掉', () => {
+    const { ir } = build('<ul><li>before<hr class="page-break">after</li></ul>')
+    expect(ir).toHaveLength(3)
+    expect(ir[0]).toMatchObject({ kind: 'list-item' })
+    expect(ir[1]).toEqual<Block>({ kind: 'pageBreak' })
+    expect(ir[2]).toMatchObject({ kind: 'list-continuation' })
+  })
+
+  it('嵌套 ul 被 div 包裹 + 同级文本：嵌套列表抽出，前后裸文本拆为列表项与延续段', () => {
+    const { ir } = build('<ul><li>foo<div><ul><li>x</li></ul></div>baz</li></ul>')
+    // 顺序: [list-item('foo'), 嵌套 list-item('x'), list-continuation('baz')]
+    expect(ir).toHaveLength(3)
+    if (ir[0]?.kind !== 'list-item') throw new Error('expected list-item')
+    expect(ir[0].inlines).toEqual([{ kind: 'text', text: 'foo', style: {} }])
     if (ir[1]?.kind !== 'list-item') throw new Error('expected nested list-item')
     expect(ir[1].inlines).toEqual([{ kind: 'text', text: 'x', style: {} }])
     expect(ir[1].ref.level).toBe(1)
+    if (ir[2]?.kind !== 'list-continuation') throw new Error('expected list-continuation')
+    expect(ir[2].inlines).toEqual([{ kind: 'text', text: 'baz', style: {} }])
+    expect(ir[2].level).toBe(0)
   })
 })
 

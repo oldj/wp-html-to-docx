@@ -1,6 +1,6 @@
 {
   "name": "wp-html-to-docx",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Convert HTML to DOCX, works in browser and Node.js.",
   "homepage": "https://github.com/oldj/wp-html-to-docx#readme",
   "bugs": {
@@ -32,7 +32,9 @@
   "scripts": {
     "dev": "tsx watch examples/demo.ts",
     "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
-    "build": "npm run clean && tsc -p tsconfig.build.json",
+    "version:sync": "node scripts/sync-version.mjs",
+    "version": "npm run version:sync && git add src/version.ts",
+    "build": "npm run clean && npm run version:sync && tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",

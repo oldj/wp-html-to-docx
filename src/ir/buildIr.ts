@@ -1,9 +1,8 @@
 // DOM → IR walker
 
-import type { Block, BlockAlign, TableCell, TableRow } from '../types.js'
+import type { Block, BlockAlign, Inline, TableCell, TableRow } from '../types.js'
 import {
   adapter,
-  createTextNode,
   getAttr,
   isElement,
   isTextNode,
@@ -30,6 +29,36 @@ type ListFrame = {
   ordered: boolean
   reference: string
   level: number
+}
+
+/**
+ * <li> 内必须以「独立块」形式输出的结构。
+ * 这些标签若被当作 phrasing 容器去递归子节点，会丢失自身结构（表格行列、pre 等宽与空白、blockquote 视觉）。
+ * 遇到时关闭当前 list-item 段落、调用 emitBlockForElement 整体输出，类似嵌套 list 的处理。
+ * 注意：div / p / h1-h6 / section / article 等仍按 phrasing 容器递归 —— 这些是「内容包装器」，
+ * 拍扁到当前 list-item 是符合预期的。
+ */
+const LI_STANDALONE_BLOCK_TAGS: ReadonlySet<string> = new Set(['table', 'pre', 'blockquote', 'hr'])
+
+/**
+ * 每层 list 的左缩进（twip）。与 builder/numbering.ts 的 INDENT_PER_LEVEL 数值一致；
+ * 这里独立维护一份是为了避免 IR 层反向依赖 builder 层 —— 若调整对齐策略需同步两处。
+ */
+const LIST_LEVEL_INDENT = 720
+
+/**
+ * 把 list 缩进附加到一个 standalone block 上。
+ * 仅 table / pre / hr / blockquote 持有 indent 字段；其他类型（如外部不该出现的）忽略。
+ */
+function attachListIndent(block: Block, indent: number): void {
+  if (
+    block.kind === 'table' ||
+    block.kind === 'pre' ||
+    block.kind === 'hr' ||
+    block.kind === 'blockquote'
+  ) {
+    block.indent = indent
+  }
 }
 
 export function buildIr(nodes: ParsedNode[], ctx: BuildContext): Block[] {
@@ -140,8 +169,16 @@ function emitBlockForElement(
       return [{ kind: 'hr' }]
     case 'pre':
       return [{ kind: 'pre', text: extractPreText(node) }]
-    case 'table':
-      return [{ kind: 'table', rows: walkTable(node, ctx) }]
+    case 'table': {
+      const cellPaddingPx = parseNonNegativeInt(getAttr(node, 'cellpadding'))
+      return [
+        {
+          kind: 'table',
+          rows: walkTable(node, ctx),
+          ...(cellPaddingPx !== undefined ? { cellPaddingPx } : {}),
+        },
+      ]
+    }
     case 'math':
       return [
         {
@@ -209,10 +246,22 @@ function walkList(
 
 /**
  * 走查一个 <li>。
- * - 直系文本与内联元素 → list-item.inlines
- * - 嵌套 ul/ol → 递归后平铺到 blockTail（共享或新建 reference 由 walkList 决定）
- * - <math> / <wp-page-break>：作为 phrasing 元素整体保留，由 collectInlines 各自产 Inline
- * - 其它块级（如 p / div）：把直系内联子节点展平到当前 li，避免在 li 内产生嵌套段落
+ *
+ * 段切分与合并规则：
+ * - 直系内联节点 / 文本 → 收入当前段缓冲
+ * - 块级元素（<p>/<div>/<h*> 等）→ 关闭当前段；其内部子节点继续递归，结束后再关闭一段
+ *   每个块级容器对应「一段」inlines，多个段会被同一个 list-item 收纳（段间以 {kind:'break'} 连接）
+ * - 嵌套 <ul>/<ol> → 关闭当前 list-item 并输出嵌套 list-item 块
+ * - <math> / <wp-page-break> → 视为 phrasing，留在当前段缓冲中
+ *
+ * 输出形态：
+ * - 多段并存时合并为单个 `list-item`，段间通过软换行 (`{kind:'break'}`) 分隔，
+ *   等价于 docx 的 `<w:br/>`：编号只出现在首段，后续段在同一段落内自动换行对齐
+ * - 嵌套列表打断当前 list-item，按出现顺序输出嵌套块
+ * - 嵌套列表「之后」若仍有文本/块级内容，归入 `list-continuation`：
+ *   单独一段、缩进对齐到 list 文本起点、不带编号 / 项目符号
+ *   （这种结构无法塞回上一段，只能另起段落）
+ * - 完全空的 <li> 兜底产出一个空 list-item 占位
  */
 function walkListItem(
   node: ParsedElement,
@@ -220,67 +269,114 @@ function walkListItem(
   ctx: BuildContext,
   listStack: ListFrame[],
 ): Block[] {
-  const inlineNodes: ParsedNode[] = []
-  const blockTail: Block[] = []
-  // 跟踪上一次推入 inlineNodes 的内容是否来自「块级展平」。
-  // 当前后两项中至少一个是块级展平时，需要在中间插一个空格保留文本边界，
-  // 否则 <p>foo</p>bar / <p>one</p><p>two</p> 等组合会被拼成无分隔的连串文本
-  let lastWasBlock = false
-  const pushBoundary = (currentIsBlock: boolean): void => {
-    if ((lastWasBlock || currentIsBlock) && inlineNodes.length > 0) {
-      inlineNodes.push(createTextNode(' '))
-    }
+  const out: Block[] = []
+  let buffer: ParsedNode[] = []
+  let segments: Inline[][] = []
+  let firstItemEmitted = false
+  const itemAlign = blockAlign(node)
+  const preserveWs = ctx.options.preserveWhitespace ?? false
+
+  // 把 buffer 收成一段 inlines 推入 segments
+  const flushBuffer = (): void => {
+    if (buffer.length === 0) return
+    const inlines = collectInlines(buffer, preserveWs)
+    buffer = []
+    if (inlines.length > 0) segments.push(inlines)
   }
 
-  // 递归走查 li 的后代节点：
-  // - ul/ol：作为嵌套列表抽到 blockTail（即便被 <div> 等非内联块包裹也能挖出来）
-  // - math / wp-page-break：作为 phrasing 元素整体保留到 inlineNodes
-  // - 其它块级元素：进入容器、对其子节点继续递归（解决 <li><div><ul>...</ul></div></li> 这类丢失嵌套列表的场景）
-  // - 内联元素 / 文本：作为叶节点进 inlineNodes
+  // 把已积累的 segments 输出为一个块：首次为 list-item，后续为 list-continuation
+  const flushSegments = (): void => {
+    flushBuffer()
+    if (segments.length === 0) return
+    const merged = joinSegmentsWithBreak(segments)
+    segments = []
+    if (!firstItemEmitted) {
+      out.push({
+        kind: 'list-item',
+        inlines: merged,
+        ref: { reference: frame.reference, level: frame.level },
+        align: itemAlign,
+      })
+      firstItemEmitted = true
+      return
+    }
+    out.push({
+      kind: 'list-continuation',
+      inlines: merged,
+      level: frame.level,
+      align: itemAlign,
+    })
+  }
+
+  // 嵌套 list 必须出现在外层 li 之后；若尚未产出 list-item，先补空占位
+  const ensureFirstEmitted = (): void => {
+    if (firstItemEmitted) return
+    out.push({
+      kind: 'list-item',
+      inlines: [],
+      ref: { reference: frame.reference, level: frame.level },
+      align: itemAlign,
+    })
+    firstItemEmitted = true
+  }
+
   const visit = (child: ParsedNode): void => {
     if (isElement(child)) {
       const tag = child.tagName
       if (tag === 'ul' || tag === 'ol') {
-        blockTail.push(...walkList(child, tag === 'ol', ctx, listStack))
+        flushSegments()
+        ensureFirstEmitted()
+        out.push(...walkList(child, tag === 'ol', ctx, listStack))
+        return
+      }
+      if (LI_STANDALONE_BLOCK_TAGS.has(tag)) {
+        // 必须独立的复杂块（table / pre / blockquote / hr）：关闭当前段，
+        // 整体复用 emitBlockForElement 的产物，避免结构被内联拍扁。
+        // 紧随其后的内容（若有）会在下一次 flushSegments 时归入 list-continuation。
+        // 同时把 list 缩进透传给这些块，让它们视觉上跟随列表项缩进，
+        // 而不是飘到文档左边距 —— 与浏览器渲染 <li><table> 的直觉一致
+        flushSegments()
+        ensureFirstEmitted()
+        const blocks = emitBlockForElement(child, ctx, listStack)
+        const levelIndent = LIST_LEVEL_INDENT * (frame.level + 1)
+        for (const b of blocks) attachListIndent(b, levelIndent)
+        out.push(...blocks)
         return
       }
       if (tag === 'math' || tag === 'wp-page-break') {
-        pushBoundary(false)
-        inlineNodes.push(child)
-        lastWasBlock = false
+        buffer.push(child)
         return
       }
       if (!isInlineTag(tag)) {
-        // 进入块级容器：把状态切到 block，让前后兄弟在 inline 内容到来时插入边界。
-        // 容器自身不直接 push 任何 inlineNodes，由后代叶节点决定是否产生内容。
-        lastWasBlock = true
+        // 一般块级容器（div / p / h1-h6 / section / article 等）：前后各 flush 一次，
+        // 使每个容器产生独立的一段，同一 list-item 内部多段最终通过 break 连接
+        flushBuffer()
         for (const grand of adapter.getChildNodes(child)) {
           visit(grand)
         }
-        // 容器结束仍标 block，使后续兄弟（无论 inline 还是 block）都被边界包裹
-        lastWasBlock = true
+        flushBuffer()
         return
       }
     }
-    pushBoundary(false)
-    inlineNodes.push(child)
-    lastWasBlock = false
+    buffer.push(child)
   }
 
   for (const child of adapter.getChildNodes(node)) {
     visit(child)
   }
+  flushSegments()
+  // 完全空的 <li>：兜底产出空 list-item，避免列表项消失
+  ensureFirstEmitted()
+  return out
+}
 
-  const inlines = collectInlines(inlineNodes, ctx.options.preserveWhitespace ?? false)
-  const out: Block[] = [
-    {
-      kind: 'list-item',
-      inlines,
-      ref: { reference: frame.reference, level: frame.level },
-      align: blockAlign(node),
-    },
-    ...blockTail,
-  ]
+/** 将多段 inlines 合并为单个 inlines，段间插入软换行 {kind:'break'} */
+function joinSegmentsWithBreak(segments: Inline[][]): Inline[] {
+  const out: Inline[] = []
+  segments.forEach((seg, i) => {
+    if (i > 0) out.push({ kind: 'break' })
+    out.push(...seg)
+  })
   return out
 }
 
@@ -360,6 +456,14 @@ function parsePositiveInt(value: string | undefined): number | undefined {
   if (value === undefined) return undefined
   const n = parseInt(value, 10)
   if (!Number.isFinite(n) || n <= 1) return undefined
+  return n
+}
+
+/** 解析非负整数（含 0）；用于 cellpadding 等值为 0 也合法的属性 */
+function parseNonNegativeInt(value: string | undefined): number | undefined {
+  if (value === undefined) return undefined
+  const n = parseInt(value, 10)
+  if (!Number.isFinite(n) || n < 0) return undefined
   return n
 }
 
