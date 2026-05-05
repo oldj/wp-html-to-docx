@@ -62,7 +62,12 @@ export type Block =
   /** pre 块完整保留空白与换行；indent 同 blockquote 由 list 注入 */
   | { kind: 'pre'; text: string; indent?: number }
   | { kind: 'hr'; indent?: number }
-  | { kind: 'table'; rows: TableRow[]; indent?: number }
+  /**
+   * `cellPaddingPx`：来自 HTML `<table cellpadding="N">`（像素，HTML 历史属性）。
+   * 在 builder 阶段优先于 options.tableCellMargin。未指定时为 undefined，
+   * builder 退回到 options 默认值。
+   */
+  | { kind: 'table'; rows: TableRow[]; indent?: number; cellPaddingPx?: number }
   | { kind: 'math'; mathml: string; display: 'inline' | 'block' }
   /** 块级分页符：来源 <hr class="page-break"> / <wp-page-break> / 块级元素 CSS page-break-* */
   | { kind: 'pageBreak' }

@@ -241,6 +241,21 @@ describe('buildIr - 列表', () => {
     expect(ir[0].indent).toBeUndefined()
   })
 
+  it('<table cellpadding="N"> 在 IR 中保留为 cellPaddingPx 字段（像素）', () => {
+    const { ir } = build('<table cellpadding="8"><tr><td>x</td></tr></table>')
+    expect(ir[0]).toMatchObject({ kind: 'table', cellPaddingPx: 8 })
+  })
+
+  it('cellpadding 缺省 / 非法值：cellPaddingPx 为 undefined（让 builder 走 options 默认）', () => {
+    expect(build('<table><tr><td>x</td></tr></table>').ir[0]).not.toHaveProperty('cellPaddingPx')
+    expect(build('<table cellpadding="abc"><tr><td>x</td></tr></table>').ir[0]).not.toHaveProperty(
+      'cellPaddingPx',
+    )
+    expect(build('<table cellpadding="-3"><tr><td>x</td></tr></table>').ir[0]).not.toHaveProperty(
+      'cellPaddingPx',
+    )
+  })
+
   it('li 内 <blockquote>：保持 blockquote 结构', () => {
     const { ir } = build('<ul><li>foo<blockquote><p>q</p></blockquote></li></ul>')
     expect(ir).toHaveLength(2)

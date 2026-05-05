@@ -169,8 +169,16 @@ function emitBlockForElement(
       return [{ kind: 'hr' }]
     case 'pre':
       return [{ kind: 'pre', text: extractPreText(node) }]
-    case 'table':
-      return [{ kind: 'table', rows: walkTable(node, ctx) }]
+    case 'table': {
+      const cellPaddingPx = parseNonNegativeInt(getAttr(node, 'cellpadding'))
+      return [
+        {
+          kind: 'table',
+          rows: walkTable(node, ctx),
+          ...(cellPaddingPx !== undefined ? { cellPaddingPx } : {}),
+        },
+      ]
+    }
     case 'math':
       return [
         {
@@ -448,6 +456,14 @@ function parsePositiveInt(value: string | undefined): number | undefined {
   if (value === undefined) return undefined
   const n = parseInt(value, 10)
   if (!Number.isFinite(n) || n <= 1) return undefined
+  return n
+}
+
+/** 解析非负整数（含 0）；用于 cellpadding 等值为 0 也合法的属性 */
+function parseNonNegativeInt(value: string | undefined): number | undefined {
+  if (value === undefined) return undefined
+  const n = parseInt(value, 10)
+  if (!Number.isFinite(n) || n < 0) return undefined
   return n
 }
 

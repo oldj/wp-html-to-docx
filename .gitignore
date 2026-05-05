@@ -11,5 +11,7 @@ plan.md
 
 # demo 产物
 examples/out*.docx
+# 临时调试 / 复现产物（位于仓库根目录，不应提交）
+/repro*.docx
 # Office 临时锁文件
 ~$*

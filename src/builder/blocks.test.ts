@@ -1,14 +1,30 @@
 import { describe, it, expect } from 'vitest'
 import { unzipSync, strFromU8 } from 'fflate'
 import { htmlToDocx } from '../index.js'
+import type { HtmlToDocxOptions } from '../options.js'
 
 /** 把生成的 docx 二进制解压并取出 word/document.xml */
-async function getDocumentXml(html: string): Promise<string> {
-  const u8 = await htmlToDocx(html)
+async function getDocumentXml(html: string, options?: HtmlToDocxOptions): Promise<string> {
+  const u8 = await htmlToDocx(html, options)
   const files = unzipSync(u8)
   const xmlBytes = files['word/document.xml']
   if (xmlBytes === undefined) throw new Error('word/document.xml not found in output')
   return strFromU8(xmlBytes)
+}
+
+/** 从单元格内边距块 <w:tblCellMar><w:top.../>...</w:tblCellMar> 中取各边的 dxa 值 */
+function extractCellMar(xml: string): {
+  top?: number
+  right?: number
+  bottom?: number
+  left?: number
+} {
+  const block = xml.match(/<w:tblCellMar>[\s\S]*?<\/w:tblCellMar>/)?.[0] ?? ''
+  const get = (side: string): number | undefined => {
+    const m = block.match(new RegExp(`<w:${side}\\s[^>]*w:w="(\\d+)"`))
+    return m?.[1] !== undefined ? parseInt(m[1], 10) : undefined
+  }
+  return { top: get('top'), right: get('right'), bottom: get('bottom'), left: get('left') }
 }
 
 describe('builder XML 断言 - 文本块', () => {
@@ -122,6 +138,99 @@ describe('builder XML 断言 - 列表内软换行', () => {
     // 段落带 left=1440 + 灰边线
     expect(xml).toMatch(/<w:ind[^>]*w:left="1440"/)
     expect(xml).toMatch(/<w:left[^>]*w:color="CCCCCC"/)
+  })
+})
+
+describe('builder XML 断言 - 单元格内边距', () => {
+  it('默认表格：含 <w:tblCellMar>，且 top/bottom 与 left/right 各有非零默认值', async () => {
+    // 防回归：曾经默认 0 内边距导致单元格紧贴
+    const xml = await getDocumentXml('<table><tr><td>x</td></tr></table>')
+    const mar = extractCellMar(xml)
+    // pt → dxa：2pt = 40, 5pt = 100（toTwip 四舍五入；2pt=40, 5pt=100）
+    expect(mar.top).toBe(40)
+    expect(mar.bottom).toBe(40)
+    expect(mar.left).toBe(100)
+    expect(mar.right).toBe(100)
+  })
+
+  it('options.tableCellMargin 覆盖默认值', async () => {
+    const xml = await getDocumentXml('<table><tr><td>x</td></tr></table>', {
+      tableCellMargin: { top: 10, right: 20, bottom: 10, left: 20, unit: 'pt' },
+    })
+    const mar = extractCellMar(xml)
+    expect(mar.top).toBe(200)
+    expect(mar.bottom).toBe(200)
+    expect(mar.left).toBe(400)
+    expect(mar.right).toBe(400)
+  })
+
+  it('HTML <table cellpadding="N"> 覆盖 options（N 为像素）', async () => {
+    const xml = await getDocumentXml(
+      '<table cellpadding="8"><tr><td>x</td></tr></table>',
+      // 即便用户通过 options 设了别的值，HTML 属性优先
+      { tableCellMargin: { top: 1, right: 1, bottom: 1, left: 1, unit: 'pt' } },
+    )
+    const mar = extractCellMar(xml)
+    // 8 px * 15 = 120 dxa，四边一致
+    expect(mar.top).toBe(120)
+    expect(mar.right).toBe(120)
+    expect(mar.bottom).toBe(120)
+    expect(mar.left).toBe(120)
+  })
+
+  it('cellpadding="0"：显式取消内边距（边界情况）', async () => {
+    const xml = await getDocumentXml('<table cellpadding="0"><tr><td>x</td></tr></table>')
+    const mar = extractCellMar(xml)
+    expect(mar.top).toBe(0)
+    expect(mar.right).toBe(0)
+    expect(mar.bottom).toBe(0)
+    expect(mar.left).toBe(0)
+  })
+
+  it('部分覆盖：只指定 left，其他三边走默认', async () => {
+    const xml = await getDocumentXml('<table><tr><td>x</td></tr></table>', {
+      tableCellMargin: { left: 10, unit: 'pt' },
+    })
+    const mar = extractCellMar(xml)
+    // left 自定义 = 10pt = 200dxa；其他三边走默认 (top/bottom 2pt = 40, right 5pt = 100)
+    expect(mar.left).toBe(200)
+    expect(mar.right).toBe(100)
+    expect(mar.top).toBe(40)
+    expect(mar.bottom).toBe(40)
+  })
+
+  it('用户只提供 unit 不提供值：fallback 到默认值时仍按默认单位（pt），不被用户的 unit 顶替', async () => {
+    // 防回归：曾经用户提供 { unit: 'mm' } 但缺四边值时，默认 (2,5,2,5) 被错误地按 mm 解释。
+    // 期望各边 fallback 到 def 时，单位也 fallback 到 def.unit
+    const xml = await getDocumentXml('<table><tr><td>x</td></tr></table>', {
+      tableCellMargin: { unit: 'mm' },
+    })
+    const mar = extractCellMar(xml)
+    // 默认值按 pt 解释：top=2pt=40, right=5pt=100；若按 mm 错算则会是 113 / 283
+    expect(mar.top).toBe(40)
+    expect(mar.right).toBe(100)
+    expect(mar.bottom).toBe(40)
+    expect(mar.left).toBe(100)
+  })
+
+  it('混合单位：user 值用 user 单位、默认值用默认单位（mm 5 与 pt 2 各自换算）', async () => {
+    const xml = await getDocumentXml('<table><tr><td>x</td></tr></table>', {
+      tableCellMargin: { left: 5, right: 5, unit: 'mm' },
+    })
+    const mar = extractCellMar(xml)
+    // left/right 用 mm：5mm ≈ 283 dxa；top/bottom fallback 到 def 2pt=40
+    expect(mar.left).toBe(283)
+    expect(mar.right).toBe(283)
+    expect(mar.top).toBe(40)
+    expect(mar.bottom).toBe(40)
+  })
+
+  it('li 内 <table> 同时获得列表缩进与默认 cell 内边距', async () => {
+    const xml = await getDocumentXml('<ul><li><table><tr><td>x</td></tr></table></li></ul>')
+    expect(xml).toMatch(/<w:tblInd[^>]*w:w="720"/)
+    const mar = extractCellMar(xml)
+    expect(mar.top).toBe(40)
+    expect(mar.left).toBe(100)
   })
 })
 

@@ -135,6 +135,12 @@ await htmlToDocx(html, {
   imageResolver: undefined,
   onUnresolvedImage: 'skip', // 'skip' | 'placeholder' | 'error'
 
+  // 表格默认单元格内边距（对应 OOXML <w:tblCellMar>，应用于所有单元格）
+  // 不传时使用库内置默认：左右 5pt + 上下 2pt，避免 docx 默认 0 内边距导致单元格紧贴。
+  // HTML <table cellpadding="N">（N 为像素）会覆盖此默认，作用于该表所有四边。
+  // 当前不解析 td/th 上的 CSS padding。
+  tableCellMargin: { top: 2, right: 5, bottom: 2, left: 5, unit: 'pt' },
+
   // 是否保留文本中的连续空格（含全角空格 U+3000、NBSP 等）
   // 含换行/Tab 的空白序列仍会折叠为单空格，避免格式化 HTML 源里的缩进/换行被当成内容
   preserveWhitespace: false,
