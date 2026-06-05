@@ -172,6 +172,17 @@ function walkBlocks(nodes: ParsedNode[], ctx: BuildContext, listStack: ListFrame
   return out
 }
 
+/**
+ * 块级元素是否应被「抑制」：内容已在别处处理，正文不再渲染。
+ * 目前仅脚注定义容器 <div|section class="footnotes">（内容由 collectFootnoteDefs 提升为 docx 脚注）。
+ * emitBlockForElement 与 walkListItem 共用此判定 —— 单一数据源，避免两处对脚注容器的判断漂移
+ * （此前 walkListItem 漏判导致 li 内嵌 footnotes 被重复渲染，即靠收口到此处根治）。
+ */
+function isSuppressedBlock(node: ParsedElement): boolean {
+  const tag = node.tagName
+  return (tag === 'div' || tag === 'section') && hasClass(node, 'footnotes')
+}
+
 /** 把单个块级元素映射为 Block[]（可能是多个，如 ul/ol 平铺） */
 function emitBlockForElement(
   node: ParsedElement,
@@ -181,7 +192,7 @@ function emitBlockForElement(
   const tag = node.tagName
 
   // 脚注定义容器：内容已在 collectFootnoteDefs 提升为 docx 脚注，正文不再渲染
-  if ((tag === 'div' || tag === 'section') && hasClass(node, 'footnotes')) return []
+  if (isSuppressedBlock(node)) return []
 
   const heading = HEADING_LEVELS[tag]
   if (heading !== undefined) {
@@ -386,9 +397,9 @@ function walkListItem(
     if (isElement(child)) {
       const tag = child.tagName
       // 脚注定义容器：内容已在 collectFootnoteDefs 注册为 docx 脚注，正文（含 li 内）不再渲染。
-      // 与 emitBlockForElement 的同款 early return 对称，避免 li 内嵌 footnotes 被当普通块拍扁、
-      // 致使脚注内容作为列表项重复出现。
-      if ((tag === 'div' || tag === 'section') && hasClass(child, 'footnotes')) return
+      // 与 emitBlockForElement 共用 isSuppressedBlock 判定，避免 li 内嵌 footnotes 被当普通块拍扁、
+      // 致使脚注内容作为列表项重复出现。提前 return（不 flush 缓冲）使其对文本流透明。
+      if (isSuppressedBlock(child)) return
       if (tag === 'ul' || tag === 'ol') {
         flushSegments()
         ensureFirstEmitted()
@@ -414,8 +425,11 @@ function walkListItem(
         return
       }
       if (!isInlineTag(tag)) {
-        // 一般块级容器（div / p / h1-h6 / section / article 等）：前后各 flush 一次，
-        // 使每个容器产生独立的一段，同一 list-item 内部多段最终通过 break 连接
+        // 一般块级容器（div / p / h1-h6 / section / article 等）按 phrasing 容器递归 visit，
+        // 刻意【不】委托 emitBlockForElement —— 列表项内的容器内容按 phrasing 处理（空白折叠、
+        // <math>/<wp-page-break> 留段内、标题降级为纯文本），与 walkBlocks 的块级语义不同；
+        // 若改为委托会改变这些行为，故二者职责不同、不强行统一。
+        // 前后各 flush 一次，使每个容器产生独立的一段，同一 list-item 内部多段最终通过 break 连接。
         flushBuffer()
         for (const grand of adapter.getChildNodes(child)) {
           visit(grand)
