@@ -159,6 +159,11 @@ function walkBlocks(nodes: ParsedNode[], ctx: BuildContext, listStack: ListFrame
     }
     flushInline()
 
+    // 抑制块（脚注定义容器）：正文完全不可见，连其自身的 CSS page-break 也不应在正文留下分页符。
+    // 必须在 pageBreakSides 之前 continue —— 否则 <div class="footnotes" style="page-break-*">
+    // 会在抑制内容的同时留下一个孤立分页符。
+    if (isSuppressedBlock(node)) continue
+
     // 块级 CSS page-break-before/after：按标准语义把分页符插在元素前/后。
     // 元素自身的产物（hr / pageBreak / 普通段落 …）由 emitBlockForElement 决定；
     // 当用户同时在 <hr class="page-break"> 上又写了 page-break-after CSS 时，会
@@ -191,7 +196,9 @@ function emitBlockForElement(
 ): Block[] {
   const tag = node.tagName
 
-  // 脚注定义容器：内容已在 collectFootnoteDefs 提升为 docx 脚注，正文不再渲染
+  // 脚注定义容器：内容已在 collectFootnoteDefs 提升为 docx 脚注，正文不再渲染。
+  // 防御性 backstop —— 正常路径下 walkBlocks / walkListItem 已前置拦截抑制块，不会走到这里；
+  // 但本函数是通用块映射器，保留此判断以防将来新增的直接调用方漏过滤而把脚注内容渲染进正文。
   if (isSuppressedBlock(node)) return []
 
   const heading = HEADING_LEVELS[tag]

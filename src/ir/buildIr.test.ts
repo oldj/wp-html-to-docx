@@ -245,6 +245,16 @@ describe('buildIr - 脚注', () => {
     ])
   })
 
+  it('定义容器带 page-break CSS：正文不留孤立分页符（抑制块对正文完全不可见）', () => {
+    // 防回归：page-break-before/after 不应先于抑制逻辑生效，否则正文会夹一个没来由的分页符
+    const { blocks } = build(
+      '<p>before</p>' +
+        '<div class="footnotes" style="page-break-before: always"><ol><li id="fn-1">x</li></ol></div>' +
+        '<p>after</p>',
+    )
+    expect(blocks.map((b) => b.kind)).toEqual(['paragraph', 'paragraph'])
+  })
+
   it('回跳箭头从脚注内容剥离', () => {
     const { ctx } = build(
       '<p>x<sup class="wp-footnote-ref"><a href="#fn-1">[1]</a></sup></p>' +
