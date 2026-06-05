@@ -206,3 +206,92 @@ describe('buildIr - preserveWhitespace 选项', () => {
     })
   })
 })
+
+describe('buildIr - 脚注', () => {
+  // 局部 helper：同时拿到 blocks 与 ctx，便于断言 ctx.footnotes
+  function build(html: string): { blocks: Block[]; ctx: BuildContext } {
+    const nodes = parseHtmlBodyChildren(html)
+    const ctx = new BuildContext({})
+    return { blocks: buildIr(nodes, ctx), ctx }
+  }
+
+  it('引用发射 footnoteRef，定义注册进 ctx.footnotes', () => {
+    const { blocks, ctx } = build(
+      '<p>x<sup class="wp-footnote-ref"><a href="#fn-1">[1]</a></sup></p>' +
+        '<div class="footnotes"><ol><li id="fn-1">note</li></ol></div>',
+    )
+    expect(blocks).toEqual<Block[]>([
+      {
+        kind: 'paragraph',
+        inlines: [
+          { kind: 'text', text: 'x', style: {} },
+          { kind: 'footnoteRef', target: 'fn-1' },
+        ],
+      },
+    ])
+    const entry = ctx.footnotes.get('fn-1')
+    expect(entry?.number).toBe(1)
+    expect(entry?.blocks).toEqual<Block[]>([
+      { kind: 'paragraph', inlines: [{ kind: 'text', text: 'note', style: {} }] },
+    ])
+  })
+
+  it('定义容器不进 Block[]（div.footnotes 被跳过）', () => {
+    const { blocks } = build(
+      '<p>x</p><div class="footnotes"><ol><li id="fn-1">note</li></ol></div>',
+    )
+    expect(blocks).toEqual<Block[]>([
+      { kind: 'paragraph', inlines: [{ kind: 'text', text: 'x', style: {} }] },
+    ])
+  })
+
+  it('回跳箭头从脚注内容剥离', () => {
+    const { ctx } = build(
+      '<p>x<sup class="wp-footnote-ref"><a href="#fn-1">[1]</a></sup></p>' +
+        '<div class="footnotes"><ol><li id="fn-1">note' +
+        '<a href="#fnref-1" class="footnote-backref">↩</a></li></ol></div>',
+    )
+    expect(ctx.footnotes.get('fn-1')?.blocks).toEqual<Block[]>([
+      { kind: 'paragraph', inlines: [{ kind: 'text', text: 'note', style: {} }] },
+    ])
+  })
+
+  it('多脚注按定义顺序编号（fn-1→1、fn-2→2）', () => {
+    const { ctx } = build(
+      '<div class="footnotes"><ol><li id="fn-1">a</li><li id="fn-2">b</li></ol></div>',
+    )
+    expect(ctx.footnotes.get('fn-1')?.number).toBe(1)
+    expect(ctx.footnotes.get('fn-2')?.number).toBe(2)
+  })
+
+  it('重复定义同一 id：只注册一次（沿用首个编号与内容）', () => {
+    const { ctx } = build(
+      '<div class="footnotes"><ol><li id="fn-1">first</li><li id="fn-1">second</li></ol></div>',
+    )
+    expect(ctx.footnotes.size).toBe(1)
+    expect(ctx.footnotes.get('fn-1')?.number).toBe(1)
+    expect(ctx.footnotes.get('fn-1')?.blocks).toEqual<Block[]>([
+      { kind: 'paragraph', inlines: [{ kind: 'text', text: 'first', style: {} }] },
+    ])
+  })
+
+  it('普通 <sup>（无脚注 class）不发射 footnoteRef，而是产生上标', () => {
+    const { blocks } = build('<p>E=mc<sup>2</sup></p>')
+    expect(blocks).toEqual<Block[]>([
+      {
+        kind: 'paragraph',
+        inlines: [
+          { kind: 'text', text: 'E=mc', style: {} },
+          { kind: 'text', text: '2', style: { superScript: true } },
+        ],
+      },
+    ])
+  })
+
+  it('脚注 class 但无可解析锚点：退回普通上标处理', () => {
+    const { blocks } = build('<p><sup class="wp-footnote-ref">x</sup></p>')
+    expect(blocks).toEqual<Block[]>([
+      { kind: 'paragraph', inlines: [{ kind: 'text', text: 'x', style: { superScript: true } }] },
+    ])
+  })
+})

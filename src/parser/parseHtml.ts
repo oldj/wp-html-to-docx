@@ -62,3 +62,10 @@ export function getAttr(el: ParsedElement, name: string): string | undefined {
   const attr = el.attrs.find((a) => a.name === name)
   return attr?.value
 }
+
+/** 元素的 class 属性是否包含某个精确 token（按空白切分，区分大小写） */
+export function hasClass(el: ParsedElement, name: string): boolean {
+  const cls = getAttr(el, 'class')
+  if (cls === undefined) return false
+  return cls.split(/\s+/).includes(name)
+}

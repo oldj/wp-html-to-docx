@@ -221,7 +221,7 @@ await htmlToDocx(html, {
 
 **内联**：`strong/b`、`em/i`、`u`、`s/strike/del`、`code`（行内代码）、`a`、`span`、`br`、`img`、`math`（见下文）
 
-**特殊**：`wp-page-break` 自定义标签（见 [分页](#分页)）
+**特殊**：`wp-page-break` 自定义标签（见 [分页](#分页)）；脚注引用 `<sup class="wp-footnote-ref">` 与文末 `<div class="footnotes">`（见 [脚注](#脚注)）
 
 **行为细节**：
 
@@ -347,6 +347,31 @@ npm install mathml2omml
 - **Webpack**：可能需要在 `optimization.splitChunks` 或异步 chunk 配置里允许动态 import。
 
 不需要数学公式的浏览器场景可以放心忽略——动态 import 失败会被库内部捕获并退回占位。
+
+## 脚注
+
+检测到「脚注引用 + 文末定义」结构时，自动转换为 docx **原生页面底部脚注**（Word/WPS 中自动编号、悬停可见、打印时排在该页底部），而非把定义列表原样画在正文末尾。无需任何配置，零误伤：只有命中专用 class 才触发。
+
+识别的结构（兼容 WonderPen 与 markdown-it 两种产物）：
+
+- **引用**：`<sup class="wp-footnote-ref">` 或 `<sup class="footnote-ref">`，内含指向定义的锚点 `<a href="#fn-1">`
+- **定义容器**：`<div class="footnotes">` 或 `<section class="footnotes">`，内部 `<ol><li id="fn-1">…</li></ol>`
+- **回跳箭头**：`<a class="footnote-backref">↩</a>`（或 `href="#fnref…"`）自动剥离——Word 脚注靠引用标记导航，无需回跳链接
+
+```html
+<p>正文<sup class="wp-footnote-ref"><a href="#fn-1">[1]</a></sup>继续。</p>
+<div class="footnotes"><hr><ol>
+  <li id="fn-1">脚注内容，支持<strong>样式</strong>、<a href="https://example.com">链接</a>与 <br> 软换行。<a href="#fnref-1" class="footnote-backref">↩</a></li>
+</ol></div>
+```
+
+### 行为细节
+
+- 引用处只输出 docx 脚注引用（`FootnoteReferenceRun`），原 `[1]` 占位文本被丢弃——编号由 Word 自动维护
+- 编号按定义在文末列表中的出现顺序分配（`fn-1`→1、`fn-2`→2…）
+- 文末定义容器**不再**作为正文渲染；容器自带的 `<hr>` 分隔线与 `<ol>` 编号交给 Word 处理
+- 引用了不存在的定义时，安全跳过该引用（不报错）；普通 `<sup>`（无脚注 class）不受影响
+- **限制**：脚注内容里的 `<img>` / `<math>` 暂不随异步资源加载（文本、内联样式、链接、`<br>` 等正常工作）
 
 ## API 速查
 

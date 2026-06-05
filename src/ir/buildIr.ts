@@ -4,6 +4,7 @@ import type { Block, BlockAlign, Inline, TableCell, TableRow } from '../types.js
 import {
   adapter,
   getAttr,
+  hasClass,
   isElement,
   isTextNode,
   type ParsedElement,
@@ -62,7 +63,72 @@ function attachListIndent(block: Block, indent: number): void {
 }
 
 export function buildIr(nodes: ParsedNode[], ctx: BuildContext): Block[] {
+  // 预扫描：脚注定义在文末、引用在前；先把定义注册进 ctx.footnotes，
+  // 正文引用（footnoteRef）才能在渲染期据锚点 id 解析出 docx 数字 id
+  collectFootnoteDefs(nodes, ctx)
   return walkBlocks(nodes, ctx, [])
+}
+
+/**
+ * 预扫描：递归查找脚注定义容器 <div|section class="footnotes">，
+ * 把其中列表的每个带 id 的 <li> 注册为脚注。
+ * 容器自带的 <hr>（分隔线）与 <ol> 编号由 Word 自动处理，这里忽略。
+ */
+function collectFootnoteDefs(nodes: ParsedNode[], ctx: BuildContext): void {
+  for (const node of nodes) {
+    if (!isElement(node)) continue
+    if ((node.tagName === 'div' || node.tagName === 'section') && hasClass(node, 'footnotes')) {
+      registerFootnotesFrom(node, ctx)
+      continue
+    }
+    collectFootnoteDefs(adapter.getChildNodes(node), ctx)
+  }
+}
+
+/**
+ * 从一个 footnotes 容器收集脚注。容器结构通常是 <ol><li id="fn-x">…</li></ol>，
+ * 只取列表的「直接 <li> 子项」，避免把脚注内容里的嵌套 <li> 误当成脚注。
+ */
+function registerFootnotesFrom(container: ParsedElement, ctx: BuildContext): void {
+  for (const child of adapter.getChildNodes(container)) {
+    if (!isElement(child)) continue
+    if (child.tagName !== 'ol' && child.tagName !== 'ul') continue
+    for (const li of adapter.getChildNodes(child)) {
+      if (!isElement(li) || li.tagName !== 'li') continue
+      const id = getAttr(li, 'id')
+      if (id === undefined || id.length === 0) continue
+      // 剥离回跳箭头后用主块级 walker 生成内容（<br> / 内联样式 / 链接 / 多段均支持）
+      const cleaned = withoutBackrefs(adapter.getChildNodes(li))
+      ctx.registerFootnote(id, walkBlocks(cleaned, ctx, []))
+    }
+  }
+}
+
+/**
+ * 返回剥离了「回跳箭头」<a> 的浅克隆节点列表（不改原树）。
+ * 回跳箭头判定：class 含 footnote-backref，或 href 以 #fnref 开头。
+ * 仅浅克隆并覆盖 childNodes；下游只经 adapter 读 tagName/attrs/childNodes，故安全。
+ */
+function withoutBackrefs(nodes: ParsedNode[]): ParsedNode[] {
+  const out: ParsedNode[] = []
+  for (const node of nodes) {
+    if (isElement(node) && node.tagName === 'a' && isBackref(node)) continue
+    if (isElement(node)) {
+      const children = adapter.getChildNodes(node)
+      if (children.length > 0) {
+        out.push({ ...node, childNodes: withoutBackrefs(children) } as ParsedNode)
+        continue
+      }
+    }
+    out.push(node)
+  }
+  return out
+}
+
+function isBackref(a: ParsedElement): boolean {
+  if (hasClass(a, 'footnote-backref')) return true
+  const href = getAttr(a, 'href')
+  return href !== undefined && href.startsWith('#fnref')
 }
 
 function walkBlocks(nodes: ParsedNode[], ctx: BuildContext, listStack: ListFrame[]): Block[] {
@@ -113,6 +179,9 @@ function emitBlockForElement(
   listStack: ListFrame[],
 ): Block[] {
   const tag = node.tagName
+
+  // 脚注定义容器：内容已在 collectFootnoteDefs 提升为 docx 脚注，正文不再渲染
+  if ((tag === 'div' || tag === 'section') && hasClass(node, 'footnotes')) return []
 
   const heading = HEADING_LEVELS[tag]
   if (heading !== undefined) {
@@ -204,13 +273,6 @@ function pageBreakSides(el: ParsedElement): { before: boolean; after: boolean } 
   const style = getAttr(el, 'style')
   if (style === undefined) return { before: false, after: false }
   return parsePageBreaks(parseInlineStyle(style))
-}
-
-/** 元素的 class 属性是否包含某个精确 token */
-function hasClass(el: ParsedElement, name: string): boolean {
-  const cls = getAttr(el, 'class')
-  if (cls === undefined) return false
-  return cls.split(/\s+/).includes(name)
 }
 
 /**
@@ -323,6 +385,10 @@ function walkListItem(
   const visit = (child: ParsedNode): void => {
     if (isElement(child)) {
       const tag = child.tagName
+      // 脚注定义容器：内容已在 collectFootnoteDefs 注册为 docx 脚注，正文（含 li 内）不再渲染。
+      // 与 emitBlockForElement 的同款 early return 对称，避免 li 内嵌 footnotes 被当普通块拍扁、
+      // 致使脚注内容作为列表项重复出现。
+      if ((tag === 'div' || tag === 'section') && hasClass(child, 'footnotes')) return
       if (tag === 'ul' || tag === 'ol') {
         flushSegments()
         ensureFirstEmitted()

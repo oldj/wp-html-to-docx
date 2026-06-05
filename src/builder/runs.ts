@@ -2,6 +2,7 @@
 
 import {
   ExternalHyperlink,
+  FootnoteReferenceRun,
   ImageRun,
   PageBreak,
   ShadingType,
@@ -29,6 +30,13 @@ export function inlinesToRuns(inlines: Inline[], ctx: BuildContext): ParagraphCh
     }
     if (item.kind === 'pageBreak') {
       out.push(new PageBreak())
+      continue
+    }
+    if (item.kind === 'footnoteRef') {
+      // 据锚点 id 在 ctx.footnotes 查到数字 id，输出 docx 脚注引用（Word 自动编号上标）
+      const fn = ctx.footnotes.get(item.target)
+      if (fn !== undefined) out.push(new FootnoteReferenceRun(fn.number))
+      // 未找到定义（引用了不存在的脚注）：跳过，不产生引用标记
       continue
     }
     if (item.kind === 'text') {
@@ -98,6 +106,10 @@ function textRunFor(text: string, style: InlineStyle): ParagraphChild {
     italics: style.italic,
     underline: style.underline ? {} : undefined,
     strike: style.strike,
+    // 上下标在 OOXML 中由互斥的 <w:vertAlign> 表达；两者同真时让上标优先，
+    // 下标显式置假，避免 docx 同时写出两个 vertAlign。
+    superScript: style.superScript,
+    subScript: style.subScript && !style.superScript,
     font,
     color: style.color,
     size: style.fontSize,

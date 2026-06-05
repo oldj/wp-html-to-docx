@@ -6,6 +6,7 @@ import type { Inline, InlineStyle } from '../types.js'
 import {
   adapter,
   getAttr,
+  hasClass,
   isElement,
   isTextNode,
   type ParsedElement,
@@ -103,6 +104,17 @@ function collectOne(
     out.push({ kind: 'image', src, alt, style: { ...activeStyle } })
     return
   }
+  // 脚注引用：<sup class="wp-footnote-ref"><a href="#fn-1">[1]</a></sup>
+  // 命中专用 class（兼容 markdown-it 的 footnote-ref）且能解析到 #fragment 锚点时，
+  // 提升为脚注引用并丢弃 [1] 占位文本；渲染层据 target 在 ctx.footnotes 查数字 id。
+  // 无可解析锚点时不拦截，退回普通 sup（继续走下方样式包装，与改造前行为一致）。
+  if (tag === 'sup' && (hasClass(node, 'wp-footnote-ref') || hasClass(node, 'footnote-ref'))) {
+    const target = findFragmentAnchor(node)
+    if (target !== undefined) {
+      out.push({ kind: 'footnoteRef', target })
+      return
+    }
+  }
 
   // 样式包装：把当前样式叠加后递归
   const childStyle = applyTagStyle(tag, activeStyle, node)
@@ -135,6 +147,15 @@ function applyTagStyle(tag: string, base: InlineStyle, el: ParsedElement): Inlin
     case 'code':
       style = { ...style, code: true }
       break
+    case 'sub':
+      // 普通下标。注意：带 footnote-ref class 的 <sup> 已在 collectOne 中提前拦截为
+      // footnoteRef，不会走到这里，故此处无需为脚注特判。
+      style = { ...style, subScript: true }
+      break
+    case 'sup':
+      // 普通上标（参见 sub 的脚注说明）
+      style = { ...style, superScript: true }
+      break
     case 'a': {
       const href = getAttr(el, 'href')
       // 协议白名单：仅放行 http(s)/mailto/tel/ftp 与锚点/相对路径；
@@ -142,10 +163,29 @@ function applyTagStyle(tag: string, base: InlineStyle, el: ParsedElement): Inlin
       if (href && isSafeHref(href)) style = { ...style, link: href }
       break
     }
-    // span / mark / sub / sup 等：仅透传，由 inline style 决定外观
+    // span / mark 等：仅透传，由 inline style 决定外观
   }
   // 第二层：inline `style` 属性按 plan.md「进阶 B」范围内叠加
   return mergeInlineCss(style, getAttr(el, 'style'))
+}
+
+/**
+ * 在元素子树中查找第一个 href 以 # 开头的 <a>，返回去掉 # 的锚点 id。
+ * 用于从 <sup><a href="#fn-1">[1]</a></sup> 取出脚注目标 'fn-1'。
+ */
+function findFragmentAnchor(el: ParsedElement): string | undefined {
+  for (const child of adapter.getChildNodes(el)) {
+    if (!isElement(child)) continue
+    if (child.tagName === 'a') {
+      const href = getAttr(child, 'href')
+      if (href !== undefined && href.startsWith('#') && href.length > 1) {
+        return href.slice(1)
+      }
+    }
+    const nested = findFragmentAnchor(child)
+    if (nested !== undefined) return nested
+  }
+  return undefined
 }
 
 /**
@@ -230,6 +270,8 @@ function sameStyle(a: InlineStyle, b: InlineStyle): boolean {
     (a.color ?? '') === (b.color ?? '') &&
     (a.bgColor ?? '') === (b.bgColor ?? '') &&
     (a.fontSize ?? 0) === (b.fontSize ?? 0) &&
-    (a.fontFamily ?? '') === (b.fontFamily ?? '')
+    (a.fontFamily ?? '') === (b.fontFamily ?? '') &&
+    !!a.superScript === !!b.superScript &&
+    !!a.subScript === !!b.subScript
   )
 }
