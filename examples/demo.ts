@@ -70,6 +70,15 @@ const html = `
   console.log('hi')
 }</code></pre>
 
+<h2>脚注</h2>
+<p>这里有一个脚注引用<sup class="wp-footnote-ref" id="fnref-1"><a href="#fn-1">[1]</a></sup>，
+另一处也引用了脚注<sup class="wp-footnote-ref" id="fnref-2"><a href="#fn-2">[2]</a></sup>。
+打开生成的文档后，应在页面底部看到对应脚注（Word 自动编号）。</p>
+<div class="footnotes"><hr><ol>
+  <li id="fn-1">第一条脚注内容<br>支持软换行。<a href="#fnref-1" class="footnote-backref">↩</a></li>
+  <li id="fn-2">第二条脚注，含 <strong>加粗</strong> 与 <a href="https://example.com">外链</a>。<a href="#fnref-2" class="footnote-backref">↩</a></li>
+</ol></div>
+
 <hr>
 
 <p>下方测试 hr 与段落结尾。</p>

@@ -4,6 +4,7 @@ import type { Block, BlockAlign, Inline, TableCell, TableRow } from '../types.js
 import {
   adapter,
   getAttr,
+  hasClass,
   isElement,
   isTextNode,
   type ParsedElement,
@@ -62,7 +63,72 @@ function attachListIndent(block: Block, indent: number): void {
 }
 
 export function buildIr(nodes: ParsedNode[], ctx: BuildContext): Block[] {
+  // 预扫描：脚注定义在文末、引用在前；先把定义注册进 ctx.footnotes，
+  // 正文引用（footnoteRef）才能在渲染期据锚点 id 解析出 docx 数字 id
+  collectFootnoteDefs(nodes, ctx)
   return walkBlocks(nodes, ctx, [])
+}
+
+/**
+ * 预扫描：递归查找脚注定义容器 <div|section class="footnotes">，
+ * 把其中列表的每个带 id 的 <li> 注册为脚注。
+ * 容器自带的 <hr>（分隔线）与 <ol> 编号由 Word 自动处理，这里忽略。
+ */
+function collectFootnoteDefs(nodes: ParsedNode[], ctx: BuildContext): void {
+  for (const node of nodes) {
+    if (!isElement(node)) continue
+    if ((node.tagName === 'div' || node.tagName === 'section') && hasClass(node, 'footnotes')) {
+      registerFootnotesFrom(node, ctx)
+      continue
+    }
+    collectFootnoteDefs(adapter.getChildNodes(node), ctx)
+  }
+}
+
+/**
+ * 从一个 footnotes 容器收集脚注。容器结构通常是 <ol><li id="fn-x">…</li></ol>，
+ * 只取列表的「直接 <li> 子项」，避免把脚注内容里的嵌套 <li> 误当成脚注。
+ */
+function registerFootnotesFrom(container: ParsedElement, ctx: BuildContext): void {
+  for (const child of adapter.getChildNodes(container)) {
+    if (!isElement(child)) continue
+    if (child.tagName !== 'ol' && child.tagName !== 'ul') continue
+    for (const li of adapter.getChildNodes(child)) {
+      if (!isElement(li) || li.tagName !== 'li') continue
+      const id = getAttr(li, 'id')
+      if (id === undefined || id.length === 0) continue
+      // 剥离回跳箭头后用主块级 walker 生成内容（<br> / 内联样式 / 链接 / 多段均支持）
+      const cleaned = withoutBackrefs(adapter.getChildNodes(li))
+      ctx.registerFootnote(id, walkBlocks(cleaned, ctx, []))
+    }
+  }
+}
+
+/**
+ * 返回剥离了「回跳箭头」<a> 的浅克隆节点列表（不改原树）。
+ * 回跳箭头判定：class 含 footnote-backref，或 href 以 #fnref 开头。
+ * 仅浅克隆并覆盖 childNodes；下游只经 adapter 读 tagName/attrs/childNodes，故安全。
+ */
+function withoutBackrefs(nodes: ParsedNode[]): ParsedNode[] {
+  const out: ParsedNode[] = []
+  for (const node of nodes) {
+    if (isElement(node) && node.tagName === 'a' && isBackref(node)) continue
+    if (isElement(node)) {
+      const children = adapter.getChildNodes(node)
+      if (children.length > 0) {
+        out.push({ ...node, childNodes: withoutBackrefs(children) } as ParsedNode)
+        continue
+      }
+    }
+    out.push(node)
+  }
+  return out
+}
+
+function isBackref(a: ParsedElement): boolean {
+  if (hasClass(a, 'footnote-backref')) return true
+  const href = getAttr(a, 'href')
+  return href !== undefined && href.startsWith('#fnref')
 }
 
 function walkBlocks(nodes: ParsedNode[], ctx: BuildContext, listStack: ListFrame[]): Block[] {
@@ -93,6 +159,11 @@ function walkBlocks(nodes: ParsedNode[], ctx: BuildContext, listStack: ListFrame
     }
     flushInline()
 
+    // 抑制块（脚注定义容器）：正文完全不可见，连其自身的 CSS page-break 也不应在正文留下分页符。
+    // 必须在 pageBreakSides 之前 continue —— 否则 <div class="footnotes" style="page-break-*">
+    // 会在抑制内容的同时留下一个孤立分页符。
+    if (isSuppressedBlock(node)) continue
+
     // 块级 CSS page-break-before/after：按标准语义把分页符插在元素前/后。
     // 元素自身的产物（hr / pageBreak / 普通段落 …）由 emitBlockForElement 决定；
     // 当用户同时在 <hr class="page-break"> 上又写了 page-break-after CSS 时，会
@@ -106,6 +177,17 @@ function walkBlocks(nodes: ParsedNode[], ctx: BuildContext, listStack: ListFrame
   return out
 }
 
+/**
+ * 块级元素是否应被「抑制」：内容已在别处处理，正文不再渲染。
+ * 目前仅脚注定义容器 <div|section class="footnotes">（内容由 collectFootnoteDefs 提升为 docx 脚注）。
+ * emitBlockForElement 与 walkListItem 共用此判定 —— 单一数据源，避免两处对脚注容器的判断漂移
+ * （此前 walkListItem 漏判导致 li 内嵌 footnotes 被重复渲染，即靠收口到此处根治）。
+ */
+function isSuppressedBlock(node: ParsedElement): boolean {
+  const tag = node.tagName
+  return (tag === 'div' || tag === 'section') && hasClass(node, 'footnotes')
+}
+
 /** 把单个块级元素映射为 Block[]（可能是多个，如 ul/ol 平铺） */
 function emitBlockForElement(
   node: ParsedElement,
@@ -113,6 +195,11 @@ function emitBlockForElement(
   listStack: ListFrame[],
 ): Block[] {
   const tag = node.tagName
+
+  // 脚注定义容器：内容已在 collectFootnoteDefs 提升为 docx 脚注，正文不再渲染。
+  // 防御性 backstop —— 正常路径下 walkBlocks / walkListItem 已前置拦截抑制块，不会走到这里；
+  // 但本函数是通用块映射器，保留此判断以防将来新增的直接调用方漏过滤而把脚注内容渲染进正文。
+  if (isSuppressedBlock(node)) return []
 
   const heading = HEADING_LEVELS[tag]
   if (heading !== undefined) {
@@ -204,13 +291,6 @@ function pageBreakSides(el: ParsedElement): { before: boolean; after: boolean } 
   const style = getAttr(el, 'style')
   if (style === undefined) return { before: false, after: false }
   return parsePageBreaks(parseInlineStyle(style))
-}
-
-/** 元素的 class 属性是否包含某个精确 token */
-function hasClass(el: ParsedElement, name: string): boolean {
-  const cls = getAttr(el, 'class')
-  if (cls === undefined) return false
-  return cls.split(/\s+/).includes(name)
 }
 
 /**
@@ -323,6 +403,10 @@ function walkListItem(
   const visit = (child: ParsedNode): void => {
     if (isElement(child)) {
       const tag = child.tagName
+      // 脚注定义容器：内容已在 collectFootnoteDefs 注册为 docx 脚注，正文（含 li 内）不再渲染。
+      // 与 emitBlockForElement 共用 isSuppressedBlock 判定，避免 li 内嵌 footnotes 被当普通块拍扁、
+      // 致使脚注内容作为列表项重复出现。提前 return（不 flush 缓冲）使其对文本流透明。
+      if (isSuppressedBlock(child)) return
       if (tag === 'ul' || tag === 'ol') {
         flushSegments()
         ensureFirstEmitted()
@@ -348,8 +432,11 @@ function walkListItem(
         return
       }
       if (!isInlineTag(tag)) {
-        // 一般块级容器（div / p / h1-h6 / section / article 等）：前后各 flush 一次，
-        // 使每个容器产生独立的一段，同一 list-item 内部多段最终通过 break 连接
+        // 一般块级容器（div / p / h1-h6 / section / article 等）按 phrasing 容器递归 visit，
+        // 刻意【不】委托 emitBlockForElement —— 列表项内的容器内容按 phrasing 处理（空白折叠、
+        // <math>/<wp-page-break> 留段内、标题降级为纯文本），与 walkBlocks 的块级语义不同；
+        // 若改为委托会改变这些行为，故二者职责不同、不强行统一。
+        // 前后各 flush 一次，使每个容器产生独立的一段，同一 list-item 内部多段最终通过 break 连接。
         flushBuffer()
         for (const grand of adapter.getChildNodes(child)) {
           visit(grand)

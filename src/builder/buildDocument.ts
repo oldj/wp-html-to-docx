@@ -2,7 +2,7 @@
 // 注入 numbering、section properties（page/header/footer/pageNumber）、
 // 文档级默认样式（字体 / 字号 / 语言）
 
-import { Document, type IStylesOptions } from 'docx'
+import { Document, Paragraph, type IStylesOptions } from 'docx'
 import type { Block } from '../types.js'
 import type { BuildContext } from '../ir/buildContext.js'
 import { DEFAULT_OPTIONS } from '../options.js'
@@ -17,6 +17,7 @@ export function buildDocument(ir: Block[], ctx: BuildContext): Document {
     levels: entry.levels,
   }))
   const section = buildSection(ctx.options, children)
+  const footnotes = buildFootnotes(ctx)
   return new Document({
     // OOXML core properties：透传给 docx 库写入 docProps/core.xml
     title: ctx.options.title,
@@ -28,8 +29,27 @@ export function buildDocument(ir: Block[], ctx: BuildContext): Document {
     styles: buildStyles(ctx),
     numbering:
       numberingConfig.length > 0 ? { config: numberingConfig } : undefined,
+    footnotes: Object.keys(footnotes).length > 0 ? footnotes : undefined,
     sections: [section],
   })
+}
+
+/**
+ * 把 ctx.footnotes 组装成 docx 的 footnotes 配置（id → { children: Paragraph[] }）。
+ * docx 的脚注内容仅接受 Paragraph，故从 blocksToChildren 结果中过滤掉非段落块
+ * （如表格——脚注内极少见）；过滤后为空时兜底一个空段，避免产生无内容脚注。
+ */
+function buildFootnotes(ctx: BuildContext): Record<string, { children: Paragraph[] }> {
+  const out: Record<string, { children: Paragraph[] }> = {}
+  for (const fn of ctx.footnotes.values()) {
+    const paras = blocksToChildren(fn.blocks, ctx).filter(
+      (c): c is Paragraph => c instanceof Paragraph,
+    )
+    out[String(fn.number)] = {
+      children: paras.length > 0 ? paras : [new Paragraph({})],
+    }
+  }
+  return out
 }
 
 /** 把 defaultFont / defaultFontSize / language 注入文档级默认样式 */

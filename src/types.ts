@@ -23,6 +23,10 @@ export type InlineStyle = {
   fontSize?: number
   /** 字体名（首选项），来自 `font-family` */
   fontFamily?: string
+  /** 上标（<sup>）；与 subScript 在 OOXML 中互斥，同时为真时以上标优先 */
+  superScript?: boolean
+  /** 下标（<sub>）；与 superScript 在 OOXML 中互斥 */
+  subScript?: boolean
 }
 
 /** 内联节点：组合后映射为 TextRun / ImageRun / ExternalHyperlink / 行内 OMML / 行内分页符 */
@@ -34,6 +38,12 @@ export type Inline =
   | { kind: 'math'; mathml: string }
   /** 行内分页符：来自段内 <wp-page-break>，渲染为 docx PageBreak run，与同段文本同时存在 */
   | { kind: 'pageBreak' }
+  /**
+   * 脚注引用：来自 <sup class="wp-footnote-ref"><a href="#fn-1">[1]</a></sup>。
+   * `target` 为锚点 id（href 去掉前导 #，如 'fn-1'）；构建期在 ctx.footnotes 查到数字 id
+   * 后渲染为 docx 的 FootnoteReferenceRun（Word 自动编号的页面底部脚注引用）。
+   */
+  | { kind: 'footnoteRef'; target: string }
 
 /** 列表层级引用，由 BuildContext.registerList 注册并填入 numbering 配置 */
 export type ListRef = {

@@ -287,6 +287,21 @@ describe('buildIr - 列表', () => {
     expect(ir[2].inlines).toEqual([{ kind: 'text', text: 'baz', style: {} }])
     expect(ir[2].level).toBe(0)
   })
+
+  it('li 内 footnotes 容器（前后均有文本）：脚注照常注册、正文不渲染，且对文本流透明', () => {
+    // isSuppressedBlock 由 emitBlockForElement 与 walkListItem 共用（单一数据源）；命中时提前
+    // return 不 flush 缓冲，使前后文本 "txt"/"tail" 并入同段、不被打断。
+    const { ir, ctx } = build(
+      '<ul><li>txt<div class="footnotes"><ol><li id="fn-1">def</li></ol></div>tail</li></ul>',
+    )
+    expect(ir).toHaveLength(1)
+    expect(ir[0]).toMatchObject({
+      kind: 'list-item',
+      inlines: [{ kind: 'text', text: 'txttail', style: {} }],
+    })
+    // 预扫描照常把脚注注册进 ctx（与是否嵌在 li 内无关）
+    expect(ctx.footnotes.get('fn-1')?.number).toBe(1)
+  })
 })
 
 describe('buildIr - blockquote / hr / pre', () => {
