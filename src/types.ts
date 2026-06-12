@@ -33,7 +33,15 @@ export type InlineStyle = {
 export type Inline =
   | { kind: 'text'; text: string; style: InlineStyle }
   | { kind: 'break' }
-  | { kind: 'image'; src: string; alt?: string; style: InlineStyle }
+  /** width/height 为 <img> 的原始尺寸字符串（如 "300" 像素或 "100%" 百分比），换算在 builder 阶段做 */
+  | {
+      kind: 'image'
+      src: string
+      alt?: string
+      width?: string
+      height?: string
+      style: InlineStyle
+    }
   /** 行内 <math>：原文 MathML，转换在 collectMath 阶段写入 ctx.mathOmml */
   | { kind: 'math'; mathml: string }
   /** 行内分页符：来自段内 <wp-page-break>，渲染为 docx PageBreak run，与同段文本同时存在 */

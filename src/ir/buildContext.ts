@@ -25,7 +25,7 @@ export type FootnoteEntry = {
 export type ImageAsset = {
   data: Uint8Array
   type: DocxImageType
-  /** px，docx 库内部转 EMU。MVP 默认 200x150 */
+  /** 固有像素尺寸（从图片数据解码，docx 库内部转 EMU）；解码失败时退回默认 200x150 */
   width: number
   height: number
 }

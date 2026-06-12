@@ -57,6 +57,21 @@ describe('imageCollector - 外链与 imageResolver', () => {
     expect(asset?.height).toBe(40)
   })
 
+  it('resolver 只给单边尺寸：保留已给值，另一边用解码固有尺寸补（不整体丢弃）', async () => {
+    const pngData = Uint8Array.from(Buffer.from(TINY_PNG_BASE64, 'base64')) // 真实 1x1 PNG
+    const resolver: ImageResolver = async () => ({
+      data: pngData,
+      mime: 'image/png',
+      width: 50, // 只给宽、不给高
+    })
+    const ctx = await buildAndCollect('<p><img src="https://x.com/a.png"/></p>', {
+      imageResolver: resolver,
+    })
+    const asset = ctx.images.get('https://x.com/a.png')
+    expect(asset?.width).toBe(50) // 已给的宽度保留（旧实现会连同它一起丢成默认/解码值）
+    expect(asset?.height).toBe(1) // 缺失的高度回退到解码固有尺寸（1x1），而非默认 150
+  })
+
   it('未提供 resolver + skip 策略：不加入 ctx.images（默认行为）', async () => {
     const ctx = await buildAndCollect('<p><img src="https://x.com/a.png"/></p>')
     expect(ctx.images.size).toBe(0)

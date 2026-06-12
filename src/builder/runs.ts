@@ -11,7 +11,9 @@ import {
 } from 'docx'
 import type { Inline, InlineStyle } from '../types.js'
 import type { BuildContext } from '../ir/buildContext.js'
+import { pageContentWidthPx } from '../utils/units.js'
 import { ommlToImported } from './ommlImport.js'
+import { resolveImageDisplaySize } from './imageLayout.js'
 
 /**
  * 把 Inline[] 转成 docx 的 ParagraphChild[]
@@ -23,6 +25,8 @@ import { ommlToImported } from './ommlImport.js'
  */
 export function inlinesToRuns(inlines: Inline[], ctx: BuildContext): ParagraphChild[] {
   const out: ParagraphChild[] = []
+  // 图片百分比宽度的换算基准、以及超宽图片的 clamp 上限：页面正文可用宽度（像素）
+  const contentWidthPx = pageContentWidthPx(ctx.options)
   for (const item of inlines) {
     if (item.kind === 'break') {
       out.push(new TextRun({ break: 1 }))
@@ -59,10 +63,16 @@ export function inlinesToRuns(inlines: Inline[], ctx: BuildContext): ParagraphCh
     if (item.kind === 'image') {
       const asset = ctx.images.get(item.src)
       if (asset !== undefined) {
+        // 依据固有尺寸 + <img> 显式宽高（含百分比）算出最终显示尺寸，并 clamp 到版心宽度
+        const size = resolveImageDisplaySize(
+          { width: asset.width, height: asset.height },
+          { width: item.width, height: item.height },
+          contentWidthPx,
+        )
         const imageRun = new ImageRun({
           type: asset.type,
           data: asset.data,
-          transformation: { width: asset.width, height: asset.height },
+          transformation: { width: size.width, height: size.height },
           altText:
             item.alt !== undefined && item.alt.length > 0
               ? { title: item.alt, description: item.alt, name: item.alt }
@@ -116,9 +126,7 @@ function textRunFor(text: string, style: InlineStyle): ParagraphChild {
     // 用 CLEAR（无图案）+ fill 表达「纯背景色」。SOLID 的语义是
     // 前景色 (color) 完全覆盖 fill，会得到纯前景色而非期望的填充色。
     shading:
-      style.bgColor !== undefined
-        ? { type: ShadingType.CLEAR, fill: style.bgColor }
-        : undefined,
+      style.bgColor !== undefined ? { type: ShadingType.CLEAR, fill: style.bgColor } : undefined,
   })
   if (style.link) {
     return new ExternalHyperlink({

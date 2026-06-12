@@ -7,6 +7,7 @@
 import type { Block, Inline } from '../types.js'
 import type { BuildContext, ImageAsset } from './buildContext.js'
 import { isDataUrl, parseDataUrl } from '../utils/dataUrl.js'
+import { getIntrinsicSize } from '../utils/imageDimensions.js'
 import { inferImageType } from '../utils/imageType.js'
 
 const DEFAULT_WIDTH = 200
@@ -58,11 +59,13 @@ async function loadImage(src: string, ctx: BuildContext): Promise<ImageAsset | n
   if (isDataUrl(src)) {
     try {
       const { mime, data } = parseDataUrl(src)
+      // 解码真实固有尺寸；失败（未识别格式）退回默认 200x150
+      const size = getIntrinsicSize(data)
       return {
         data,
         type: inferImageType(mime, data),
-        width: DEFAULT_WIDTH,
-        height: DEFAULT_HEIGHT,
+        width: size?.width ?? DEFAULT_WIDTH,
+        height: size?.height ?? DEFAULT_HEIGHT,
       }
     } catch (err) {
       return handleUnresolved(src, ctx, `Failed to parse data URL: ${(err as Error).message}`)
@@ -74,11 +77,15 @@ async function loadImage(src: string, ctx: BuildContext): Promise<ImageAsset | n
   if (resolver !== undefined) {
     try {
       const res = await resolver(src)
+      // 逐字段兜底：resolver 显式值优先，缺哪个轴就用数据解码的固有尺寸补，最后退默认。
+      // 不整体「宽高都有才采用」，否则 resolver 只给单边尺寸时，已给的那边会被一起丢弃，
+      // 回退到解码结果或默认 200x150（相对旧的逐字段 `?? 默认` 行为是兼容性回归）。
+      const decoded = getIntrinsicSize(res.data)
       return {
         data: res.data,
         type: inferImageType(res.mime, res.data),
-        width: res.width ?? DEFAULT_WIDTH,
-        height: res.height ?? DEFAULT_HEIGHT,
+        width: res.width ?? decoded?.width ?? DEFAULT_WIDTH,
+        height: res.height ?? decoded?.height ?? DEFAULT_HEIGHT,
       }
     } catch (err) {
       return handleUnresolved(src, ctx, `imageResolver threw: ${(err as Error).message}`)
@@ -88,11 +95,7 @@ async function loadImage(src: string, ctx: BuildContext): Promise<ImageAsset | n
   return handleUnresolved(src, ctx, 'No imageResolver configured for non-data URL')
 }
 
-function handleUnresolved(
-  src: string,
-  ctx: BuildContext,
-  reason: string,
-): ImageAsset | null {
+function handleUnresolved(src: string, ctx: BuildContext, reason: string): ImageAsset | null {
   const policy = ctx.options.onUnresolvedImage ?? 'skip'
   if (policy === 'error') {
     throw new Error(`Cannot load image "${src}": ${reason}`)

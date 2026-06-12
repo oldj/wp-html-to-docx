@@ -101,7 +101,11 @@ function collectOne(
     const src = getAttr(node, 'src') ?? ''
     if (!src) return
     const alt = getAttr(node, 'alt')
-    out.push({ kind: 'image', src, alt, style: { ...activeStyle } })
+    // 采集尺寸：优先 HTML width/height 属性，缺失时回退到 inline style 的 width/height。
+    // 原样保留字符串（"300" 像素 / "100%" 百分比 / "300px"），换算交给 builder 阶段。
+    const width = getAttr(node, 'width') ?? cssLength(node, 'width')
+    const height = getAttr(node, 'height') ?? cssLength(node, 'height')
+    out.push({ kind: 'image', src, alt, width, height, style: { ...activeStyle } })
     return
   }
   // 脚注引用：<sup class="wp-footnote-ref"><a href="#fn-1">[1]</a></sup>
@@ -274,4 +278,16 @@ function sameStyle(a: InlineStyle, b: InlineStyle): boolean {
     !!a.superScript === !!b.superScript &&
     !!a.subScript === !!b.subScript
   )
+}
+
+/**
+ * 从元素 inline style 中取 width / height（仅这两个属性，不含 max-width）。
+ * 仅作为 HTML width/height 属性缺失时的兜底，主要服务粘贴自网页的 `<img style="width:..">`。
+ */
+function cssLength(el: ParsedElement, prop: 'width' | 'height'): string | undefined {
+  const style = getAttr(el, 'style')
+  if (!style) return undefined
+  // (?:^|;) 前缀确保不会匹配到 max-width / min-width 里的 "width"
+  const m = new RegExp(`(?:^|;)\\s*${prop}\\s*:\\s*([^;]+)`, 'i').exec(style)
+  return m?.[1]?.trim()
 }
