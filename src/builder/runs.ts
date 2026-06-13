@@ -63,10 +63,14 @@ export function inlinesToRuns(inlines: Inline[], ctx: BuildContext): ParagraphCh
     if (item.kind === 'image') {
       const asset = ctx.images.get(item.src)
       if (asset !== undefined) {
-        // 依据固有尺寸 + <img> 显式宽高（含百分比）算出最终显示尺寸，并 clamp 到版心宽度
+        // 依据固有尺寸 + <img> 显式宽高（含百分比）算出最终显示尺寸，并 clamp 到版心宽度。
+        // 满宽（data-full-width）等价于 width:100% 且忽略显式高度，优先级高于具体 width。
+        const explicit = item.fullWidth
+          ? { width: '100%', height: undefined }
+          : { width: item.width, height: item.height }
         const size = resolveImageDisplaySize(
           { width: asset.width, height: asset.height },
-          { width: item.width, height: item.height },
+          explicit,
           contentWidthPx,
         )
         const imageRun = new ImageRun({

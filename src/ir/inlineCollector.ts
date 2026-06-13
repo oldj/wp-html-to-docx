@@ -121,7 +121,9 @@ function collectOne(
     // 原样保留字符串（"300" 像素 / "100%" 百分比 / "300px"），换算交给 builder 阶段。
     const width = getAttr(node, 'width') ?? cssLength(node, 'width')
     const height = getAttr(node, 'height') ?? cssLength(node, 'height')
-    out.push({ kind: 'image', src, alt, width, height, style: { ...activeStyle } })
+    // 满宽语义标记：占满版心可用宽度，优先级高于 width
+    const fullWidth = getAttr(node, 'data-full-width') === '1'
+    out.push({ kind: 'image', src, alt, width, height, fullWidth, style: { ...activeStyle } })
     return
   }
   // 脚注引用：<sup class="wp-footnote-ref"><a href="#fn-1">[1]</a></sup>

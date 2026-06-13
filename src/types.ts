@@ -40,6 +40,8 @@ export type Inline =
       alt?: string
       width?: string
       height?: string
+      /** 来自 <img data-full-width="1">：占满版心可用宽度（等价于 width:100%，优先级高于 width） */
+      fullWidth?: boolean
       style: InlineStyle
     }
   /** 行内 <math>：原文 MathML，转换在 collectMath 阶段写入 ctx.mathOmml */
