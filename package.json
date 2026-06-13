@@ -1,6 +1,6 @@
 {
   "name": "wp-html-to-docx",
-  "version": "0.2.2",
+  "version": "0.2.4",
   "description": "Convert HTML to DOCX, works in browser and Node.js.",
   "homepage": "https://github.com/oldj/wp-html-to-docx#readme",
   "bugs": {

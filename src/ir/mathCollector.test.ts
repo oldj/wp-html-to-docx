@@ -32,9 +32,7 @@ describe('collectMath - 转换与去重', () => {
   })
 
   it('两段不同 MathML：ctx.mathOmml.size = 2', async () => {
-    const ctx = await run(
-      '<p><math><mn>1</mn></math></p><p><math><mn>2</mn></math></p>',
-    )
+    const ctx = await run('<p><math><mn>1</mn></math></p><p><math><mn>2</mn></math></p>')
     expect(ctx.mathOmml.size).toBe(2)
   })
 
@@ -48,5 +46,21 @@ describe('collectMath - 转换与去重', () => {
   it('IR 中无 math：ctx.mathOmml 保持空（不需要触发懒加载）', async () => {
     const ctx = await run('<p>hello</p>')
     expect(ctx.mathOmml.size).toBe(0)
+  })
+
+  it('list-continuation 中的行内 math 也被转换（嵌套列表之后的内容）', async () => {
+    // 此前遍历漏掉 list-continuation 块型，其中的公式渲染期退化为 [math] 占位
+    const ctx = await run(
+      '<ul><li>head<ul><li>nested</li></ul>tail <math><mn>5</mn></math></li></ul>',
+    )
+    expect(ctx.mathOmml.size).toBe(1)
+  })
+
+  it('脚注内容中的 math 也被转换（ctx.footnotes 的 blocks）', async () => {
+    const ctx = await run(
+      '<p>x<sup class="wp-footnote-ref"><a href="#fn-1">[1]</a></sup></p>' +
+        '<div class="footnotes"><ol><li id="fn-1">note <math><mi>y</mi></math></li></ol></div>',
+    )
+    expect(ctx.mathOmml.size).toBe(1)
   })
 })

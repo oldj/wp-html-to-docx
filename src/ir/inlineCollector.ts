@@ -52,13 +52,29 @@ export function isInlineTag(tag: string): boolean {
  *
  * @param preserveWhitespace 是否对文本节点保留连续空格（含全角空格 U+3000）；
  *   见 utils/html.ts 中 `collapseWhitespace` 的保守保留语义
+ * @param baseStyle 初始样式。块级 walker 把「产生该块的元素自身的 style 文本样式」
+ *   （如 `<p style="color:red">`）经 inlineStyleFromElement 解析后传入，
+ *   实现块级样式向段内文本的单链下发（不做完整 cascade）
  */
-export function collectInlines(nodes: ParsedNode[], preserveWhitespace = false): Inline[] {
+export function collectInlines(
+  nodes: ParsedNode[],
+  preserveWhitespace = false,
+  baseStyle: InlineStyle = {},
+): Inline[] {
   const out: Inline[] = []
   for (const node of nodes) {
-    collectOne(node, {}, out, preserveWhitespace)
+    collectOne(node, baseStyle, out, preserveWhitespace)
   }
   return mergeAdjacentText(out)
+}
+
+/**
+ * 把元素自身 `style` 属性中支持的文本样式叠加到 base 上，返回新 InlineStyle。
+ * 供块级 walker（buildIr）从 p / h* / li / td 等块级元素提取文本样式后
+ * 作为 collectInlines 的 baseStyle 下发；元素无 style 时原样返回 base。
+ */
+export function inlineStyleFromElement(el: ParsedElement, base: InlineStyle = {}): InlineStyle {
+  return mergeInlineCss(base, getAttr(el, 'style'))
 }
 
 function collectOne(
@@ -105,7 +121,9 @@ function collectOne(
     // 原样保留字符串（"300" 像素 / "100%" 百分比 / "300px"），换算交给 builder 阶段。
     const width = getAttr(node, 'width') ?? cssLength(node, 'width')
     const height = getAttr(node, 'height') ?? cssLength(node, 'height')
-    out.push({ kind: 'image', src, alt, width, height, style: { ...activeStyle } })
+    // 满宽语义标记：占满版心可用宽度，优先级高于 width
+    const fullWidth = getAttr(node, 'data-full-width') === '1'
+    out.push({ kind: 'image', src, alt, width, height, fullWidth, style: { ...activeStyle } })
     return
   }
   // 脚注引用：<sup class="wp-footnote-ref"><a href="#fn-1">[1]</a></sup>

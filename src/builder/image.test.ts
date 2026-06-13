@@ -1,11 +1,15 @@
 import { describe, it, expect } from 'vitest'
 import { unzipSync, strFromU8 } from 'fflate'
 import { htmlToDocx } from '../index.js'
+import { pageContentWidthPx } from '../utils/units.js'
 import type { ImageResolver } from '../options.js'
 
 const TINY_PNG_BASE64 =
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNgAAIAAAUAAeImBZsAAAAASUVORK5CYII='
 const TINY_PNG_DATA_URL = `data:image/png;base64,${TINY_PNG_BASE64}`
+
+// docx 把 transformation 的像素尺寸按 1px = 9525 EMU 写入 <wp:extent>
+const EMU_PER_PX = 9525
 
 async function unpack(html: string, opts = {}) {
   const u8 = await htmlToDocx(html, opts)
@@ -13,6 +17,13 @@ async function unpack(html: string, opts = {}) {
   const xml = files['word/document.xml']
   if (xml === undefined) throw new Error('document.xml missing')
   return { document: strFromU8(xml), files }
+}
+
+// 取首个 <wp:extent cx cy>（图片显示尺寸，单位 EMU）
+function firstExtent(documentXml: string): { cx: number; cy: number } {
+  const m = documentXml.match(/<wp:extent\s+cx="(\d+)"\s+cy="(\d+)"\s*\/>/)
+  if (m === null) throw new Error('no wp:extent found')
+  return { cx: Number(m[1]), cy: Number(m[2]) }
 }
 
 describe('builder XML - image', () => {
@@ -59,5 +70,41 @@ describe('builder XML - image', () => {
       `<p><a href="https://example.com"><img src="${TINY_PNG_DATA_URL}"/></a></p>`,
     )
     expect(document).toMatch(/<w:hyperlink[\s\S]*?<w:drawing>[\s\S]*?<\/w:hyperlink>/)
+  })
+})
+
+describe('builder XML - image data-full-width（满宽）', () => {
+  // 满宽=铺满版心可用宽度。1x1 PNG 固有比例 1:1，铺满后 cx===cy。
+  const fullWidthEmu = Math.round(pageContentWidthPx({})) * EMU_PER_PX
+
+  it('data-full-width="1"：图片宽度铺满版心可用宽度', async () => {
+    const { document } = await unpack(
+      `<p><img src="${TINY_PNG_DATA_URL}" data-full-width="1"/></p>`,
+    )
+    expect(firstExtent(document).cx).toBe(fullWidthEmu)
+  })
+
+  it('满宽优先于显式 width：width="50" 被忽略，仍铺满版心', async () => {
+    const { document } = await unpack(
+      `<p><img src="${TINY_PNG_DATA_URL}" width="50" data-full-width="1"/></p>`,
+    )
+    expect(firstExtent(document).cx).toBe(fullWidthEmu)
+  })
+
+  it('满宽忽略显式 height：按固有比例铺满（cx===cy），而非采用 height="50"', async () => {
+    // 防回归：若 height="50" 被采用，cx（铺满）会远大于 cy（50px），二者不相等
+    const { document } = await unpack(
+      `<p><img src="${TINY_PNG_DATA_URL}" width="50" height="50" data-full-width="1"/></p>`,
+    )
+    const { cx, cy } = firstExtent(document)
+    expect(cx).toBe(fullWidthEmu)
+    expect(cy).toBe(cx)
+  })
+
+  it('对照：无 data-full-width 时 width/height 照常生效（50x50px）', async () => {
+    const { document } = await unpack(
+      `<p><img src="${TINY_PNG_DATA_URL}" width="50" height="50"/></p>`,
+    )
+    expect(firstExtent(document)).toEqual({ cx: 50 * EMU_PER_PX, cy: 50 * EMU_PER_PX })
   })
 })

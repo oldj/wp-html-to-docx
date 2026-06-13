@@ -10,6 +10,19 @@
 
 - 上标 / 下标：`<sub>` / `<sup>` 现在真正产生上下标效果（OOXML `<w:vertAlign>`）。此前二者虽被识别为内联标签却无对应样式映射，仅当普通文本透传。带 `wp-footnote-ref` / `footnote-ref` class 的脚注引用 `<sup>` 不受影响，仍走脚注路径。
 - 脚注：自动识别「脚注引用 + 文末定义」结构（兼容 WonderPen 的 `<sup class="wp-footnote-ref">` / `<div class="footnotes">` 与 markdown-it 的 `footnote-ref` / `<section class="footnotes">`），转换为 docx **原生页面底部脚注**（`FootnoteReferenceRun` + `Document.footnotes`，Word/WPS 自动编号、悬停可见）。回跳箭头 `footnote-backref` 自动剥离；文末定义容器不再作为正文渲染。无需配置，仅命中专用 class 才触发。
+- 块级元素文本样式下发：`<p>` / `<h1>`–`<h6>` / `<li>` / `<td>` / `<blockquote>` / `<div>` 等块级元素自身 `style` 中的文本样式（color / font-size / font-weight 等「进阶 B」范围）现在沿「单链继承」下发给段内文本，此前这些样式被忽略。仍不做选择器 / specificity 等完整 cascade。
+- HTML4 遗留属性 `align="..."`：`<p align="center">` 等老编辑器写法现在产生对齐效果；CSS `text-align` 优先级更高（与浏览器一致）。
+- 表格单元格对齐：`<td>` / `<th>` 上的 `text-align` / `align` 下推到单元格内顶层段落。
+- 图片格式防护：检测 docx 不支持的 WebP / SVG / AVIF / HEIC / TIFF / ICO（mime + magic bytes 双路识别），按 `onUnresolvedImage` 策略处理（默认 skip），不再伪装成 PNG 嵌入产生 Word 中显示红叉的坏图。
+- `logger` 现在承接库内全部非致命 warning（未知纸张名、页码槽位冲突、公式转换失败、图片未嵌入原因等）；未提供 logger 时维持原有 console / 静默行为不变。
+- 导出 `TableCellMargin` 类型（此前 `tableCellMargin` 选项的类型未公开导出）。
+
+### Fixed
+
+- 嵌套列表之后的延续内容（list-continuation）中的图片与公式此前不被预加载 / 转换，渲染期图片静默丢失、公式退化为 `[math]` 占位；现已修复。
+- 脚注内容中的图片与公式同样因资源收集遗漏而丢失 / 退化；现已修复。
+- `<th>` 表头单元格文本现在默认加粗并居中（与浏览器渲染及表格模块注释宣称的行为一致），显式样式 / 对齐可覆盖；此前只有灰底没有加粗。
+- 嵌套 `<blockquote>` 现在逐层叠加缩进（720 twip / 层），此前嵌套层与父层缩进相同、看不出层次。
 
 ## [0.2.0] - 2026-05-01
 

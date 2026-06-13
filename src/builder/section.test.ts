@@ -60,6 +60,39 @@ describe('section - 纸张尺寸与方向', () => {
       warn.mockRestore()
     }
   })
+
+  it('提供 logger 时 warning 走 logger 而非 console', async () => {
+    const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    const logs: string[] = []
+    try {
+      await unpack('<p>x</p>', {
+        page: { size: 'A6' as never },
+        logger: (level, message) => {
+          if (level === 'warn') logs.push(message)
+        },
+      })
+      expect(logs.some((m) => m.includes('unknown PaperSize'))).toBe(true)
+      // console.warn 不再被 PaperSize 警告触发
+      const paperCalls = consoleWarn.mock.calls.filter((c) =>
+        String(c[0]).includes('unknown PaperSize'),
+      )
+      expect(paperCalls.length).toBe(0)
+    } finally {
+      consoleWarn.mockRestore()
+    }
+  })
+
+  it('pageNumber 槽位与已有内容冲突的 warning 同样走 logger', async () => {
+    const logs: string[] = []
+    await unpack('<p>x</p>', {
+      footer: { center: 'existing' },
+      pageNumber: { enabled: true, position: 'footer-center' },
+      logger: (level, message) => {
+        if (level === 'warn') logs.push(message)
+      },
+    })
+    expect(logs.some((m) => m.includes('overlaps'))).toBe(true)
+  })
 })
 
 describe('section - 页边距', () => {

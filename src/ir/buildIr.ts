@@ -1,6 +1,6 @@
 // DOM → IR walker
 
-import type { Block, BlockAlign, Inline, TableCell, TableRow } from '../types.js'
+import type { Block, BlockAlign, Inline, InlineStyle, TableCell, TableRow } from '../types.js'
 import {
   adapter,
   getAttr,
@@ -10,7 +10,7 @@ import {
   type ParsedElement,
   type ParsedNode,
 } from '../parser/parseHtml.js'
-import { collectInlines, isInlineTag } from './inlineCollector.js'
+import { collectInlines, inlineStyleFromElement, isInlineTag } from './inlineCollector.js'
 import type { BuildContext } from './buildContext.js'
 import { isWhitespaceOnly } from '../utils/html.js'
 import { parseInlineStyle, parsePageBreaks, parseTextAlign } from '../utils/css.js'
@@ -131,12 +131,22 @@ function isBackref(a: ParsedElement): boolean {
   return href !== undefined && href.startsWith('#fnref')
 }
 
-function walkBlocks(nodes: ParsedNode[], ctx: BuildContext, listStack: ListFrame[]): Block[] {
+/**
+ * @param baseStyle 从外层容器（td / blockquote / 未知 div 等）继承下来的文本基础样式，
+ *   由各块级元素再叠加自身 style 后传给 collectInlines。实现「单链继承」：
+ *   外层容器 → 内层块 → 文本，是浏览器样式继承语义的轻量子集（不做选择器 / specificity）。
+ */
+function walkBlocks(
+  nodes: ParsedNode[],
+  ctx: BuildContext,
+  listStack: ListFrame[],
+  baseStyle: InlineStyle = {},
+): Block[] {
   const out: Block[] = []
   let inlineBuffer: ParsedNode[] = []
   const flushInline = (): void => {
     if (inlineBuffer.length === 0) return
-    const inlines = collectInlines(inlineBuffer, ctx.options.preserveWhitespace ?? false)
+    const inlines = collectInlines(inlineBuffer, ctx.options.preserveWhitespace ?? false, baseStyle)
     if (inlines.length > 0) {
       out.push({ kind: 'paragraph', inlines })
     }
@@ -170,7 +180,7 @@ function walkBlocks(nodes: ParsedNode[], ctx: BuildContext, listStack: ListFrame
     // 叠加产生 2 个分页符——视为用户冲突写法，不特判
     const sides = pageBreakSides(node)
     if (sides.before) out.push({ kind: 'pageBreak' })
-    out.push(...emitBlockForElement(node, ctx, listStack))
+    out.push(...emitBlockForElement(node, ctx, listStack, baseStyle))
     if (sides.after) out.push({ kind: 'pageBreak' })
   }
   flushInline()
@@ -193,13 +203,18 @@ function emitBlockForElement(
   node: ParsedElement,
   ctx: BuildContext,
   listStack: ListFrame[],
+  baseStyle: InlineStyle = {},
 ): Block[] {
   const tag = node.tagName
+  const preserveWs = ctx.options.preserveWhitespace ?? false
 
   // 脚注定义容器：内容已在 collectFootnoteDefs 提升为 docx 脚注，正文不再渲染。
   // 防御性 backstop —— 正常路径下 walkBlocks / walkListItem 已前置拦截抑制块，不会走到这里；
   // 但本函数是通用块映射器，保留此判断以防将来新增的直接调用方漏过滤而把脚注内容渲染进正文。
   if (isSuppressedBlock(node)) return []
+
+  // 元素自身 style 的文本样式叠加在外层继承样式上，下发给段内文本
+  const ownStyle = inlineStyleFromElement(node, baseStyle)
 
   const heading = HEADING_LEVELS[tag]
   if (heading !== undefined) {
@@ -207,10 +222,7 @@ function emitBlockForElement(
       {
         kind: 'heading',
         level: heading,
-        inlines: collectInlines(
-          adapter.getChildNodes(node),
-          ctx.options.preserveWhitespace ?? false,
-        ),
+        inlines: collectInlines(adapter.getChildNodes(node), preserveWs, ownStyle),
         align: blockAlign(node),
       },
     ]
@@ -221,25 +233,19 @@ function emitBlockForElement(
       return [
         {
           kind: 'paragraph',
-          inlines: collectInlines(
-            adapter.getChildNodes(node),
-            ctx.options.preserveWhitespace ?? false,
-          ),
+          inlines: collectInlines(adapter.getChildNodes(node), preserveWs, ownStyle),
           align: blockAlign(node),
         },
       ]
     case 'ul':
     case 'ol':
-      return walkList(node, tag === 'ol', ctx, listStack)
+      return walkList(node, tag === 'ol', ctx, listStack, ownStyle)
     case 'li':
       // 浮在 list 外的 li：按 paragraph 处理（parse5 通常会修正，但兜底）
       return [
         {
           kind: 'paragraph',
-          inlines: collectInlines(
-            adapter.getChildNodes(node),
-            ctx.options.preserveWhitespace ?? false,
-          ),
+          inlines: collectInlines(adapter.getChildNodes(node), preserveWs, ownStyle),
           align: blockAlign(node),
         },
       ]
@@ -247,7 +253,7 @@ function emitBlockForElement(
       return [
         {
           kind: 'blockquote',
-          children: walkBlocks(adapter.getChildNodes(node), ctx, listStack),
+          children: walkBlocks(adapter.getChildNodes(node), ctx, listStack, ownStyle),
         },
       ]
     case 'hr':
@@ -255,13 +261,14 @@ function emitBlockForElement(
       if (hasClass(node, 'page-break')) return [{ kind: 'pageBreak' }]
       return [{ kind: 'hr' }]
     case 'pre':
+      // pre 用等宽字体固定样式渲染，不参与文本样式继承
       return [{ kind: 'pre', text: extractPreText(node) }]
     case 'table': {
       const cellPaddingPx = parseNonNegativeInt(getAttr(node, 'cellpadding'))
       return [
         {
           kind: 'table',
-          rows: walkTable(node, ctx),
+          rows: walkTable(node, ctx, ownStyle),
           ...(cellPaddingPx !== undefined ? { cellPaddingPx } : {}),
         },
       ]
@@ -277,12 +284,12 @@ function emitBlockForElement(
     case 'wp-page-break': {
       // parse5 不识别 `<wp-page-break/>` 自闭合，后续兄弟节点会被解析为它的子节点；
       // 因此把子节点继续按块级处理，附在分页符之后，避免丢内容
-      const childBlocks = walkBlocks(adapter.getChildNodes(node), ctx, listStack)
+      const childBlocks = walkBlocks(adapter.getChildNodes(node), ctx, listStack, baseStyle)
       return [{ kind: 'pageBreak' }, ...childBlocks]
     }
     default:
-      // 未知块级容器：递归其内部
-      return walkBlocks(adapter.getChildNodes(node), ctx, listStack)
+      // 未知块级容器：递归其内部，自身 style 继续向内继承（div/section 常作样式包装器）
+      return walkBlocks(adapter.getChildNodes(node), ctx, listStack, ownStyle)
   }
 }
 
@@ -304,6 +311,7 @@ function walkList(
   ordered: boolean,
   ctx: BuildContext,
   listStack: ListFrame[],
+  baseStyle: InlineStyle = {},
 ): Block[] {
   const top = listStack[listStack.length - 1]
   let frame: ListFrame
@@ -319,7 +327,7 @@ function walkList(
     if (!isElement(child)) continue
     const tag = child.tagName
     if (tag !== 'li') continue
-    out.push(...walkListItem(child, frame, ctx, newStack))
+    out.push(...walkListItem(child, frame, ctx, newStack, baseStyle))
   }
   return out
 }
@@ -348,6 +356,7 @@ function walkListItem(
   frame: ListFrame,
   ctx: BuildContext,
   listStack: ListFrame[],
+  baseStyle: InlineStyle = {},
 ): Block[] {
   const out: Block[] = []
   let buffer: ParsedNode[] = []
@@ -355,11 +364,13 @@ function walkListItem(
   let firstItemEmitted = false
   const itemAlign = blockAlign(node)
   const preserveWs = ctx.options.preserveWhitespace ?? false
+  // li 自身 style 的文本样式叠加在外层（ul/ol 及更外层容器）继承样式上
+  const itemStyle = inlineStyleFromElement(node, baseStyle)
 
   // 把 buffer 收成一段 inlines 推入 segments
   const flushBuffer = (): void => {
     if (buffer.length === 0) return
-    const inlines = collectInlines(buffer, preserveWs)
+    const inlines = collectInlines(buffer, preserveWs, itemStyle)
     buffer = []
     if (inlines.length > 0) segments.push(inlines)
   }
@@ -410,7 +421,7 @@ function walkListItem(
       if (tag === 'ul' || tag === 'ol') {
         flushSegments()
         ensureFirstEmitted()
-        out.push(...walkList(child, tag === 'ol', ctx, listStack))
+        out.push(...walkList(child, tag === 'ol', ctx, listStack, itemStyle))
         return
       }
       if (LI_STANDALONE_BLOCK_TAGS.has(tag)) {
@@ -421,7 +432,7 @@ function walkListItem(
         // 而不是飘到文档左边距 —— 与浏览器渲染 <li><table> 的直觉一致
         flushSegments()
         ensureFirstEmitted()
-        const blocks = emitBlockForElement(child, ctx, listStack)
+        const blocks = emitBlockForElement(child, ctx, listStack, itemStyle)
         const levelIndent = LIST_LEVEL_INDENT * (frame.level + 1)
         for (const b of blocks) attachListIndent(b, levelIndent)
         out.push(...blocks)
@@ -467,19 +478,28 @@ function joinSegmentsWithBreak(segments: Inline[][]): Inline[] {
   return out
 }
 
-/** 从块级元素的 inline `style="text-align: ..."` 取出对齐值 */
+/**
+ * 从块级元素取对齐值：CSS `text-align` 优先，缺失时回退 HTML4 遗留属性
+ * `align="center"`（老编辑器 / WP 旧文常见写法），与浏览器的优先级一致。
+ */
 function blockAlign(el: ParsedElement): BlockAlign | undefined {
   const decls = parseInlineStyle(getAttr(el, 'style'))
-  return parseTextAlign(decls['text-align'])
+  const fromCss = parseTextAlign(decls['text-align'])
+  if (fromCss !== undefined) return fromCss
+  return parseTextAlign(getAttr(el, 'align'))
 }
 
 /**
  * 走查 <table>。parse5 自动补全 thead/tbody，因此可以放心展开。
  * 收集所有 tr，记录是否处于 thead 或者 tr 内 th 占多数。
  */
-function walkTable(node: ParsedElement, ctx: BuildContext): TableRow[] {
+function walkTable(
+  node: ParsedElement,
+  ctx: BuildContext,
+  baseStyle: InlineStyle = {},
+): TableRow[] {
   const rows: TableRow[] = []
-  collectRows(node, false, ctx, rows)
+  collectRows(node, false, ctx, rows, baseStyle)
   return rows
 }
 
@@ -488,27 +508,33 @@ function collectRows(
   inHeader: boolean,
   ctx: BuildContext,
   out: TableRow[],
+  baseStyle: InlineStyle,
 ): void {
   for (const child of adapter.getChildNodes(node)) {
     if (!isElement(child)) continue
     const tag = child.tagName
     if (tag === 'thead') {
-      collectRows(child, true, ctx, out)
+      collectRows(child, true, ctx, out, baseStyle)
       continue
     }
     if (tag === 'tbody' || tag === 'tfoot') {
-      collectRows(child, inHeader, ctx, out)
+      collectRows(child, inHeader, ctx, out, baseStyle)
       continue
     }
     if (tag === 'tr') {
-      out.push(walkTableRow(child, inHeader, ctx))
+      out.push(walkTableRow(child, inHeader, ctx, baseStyle))
       continue
     }
     if (tag === 'caption' || tag === 'colgroup' || tag === 'col') continue
   }
 }
 
-function walkTableRow(node: ParsedElement, inHeader: boolean, ctx: BuildContext): TableRow {
+function walkTableRow(
+  node: ParsedElement,
+  inHeader: boolean,
+  ctx: BuildContext,
+  baseStyle: InlineStyle,
+): TableRow {
   const cells: TableCell[] = []
   let thCount = 0
   let cellCount = 0
@@ -518,17 +544,41 @@ function walkTableRow(node: ParsedElement, inHeader: boolean, ctx: BuildContext)
     if (tag !== 'th' && tag !== 'td') continue
     cellCount += 1
     if (tag === 'th') thCount += 1
-    cells.push(walkTableCell(child, ctx))
+    cells.push(walkTableCell(child, ctx, tag === 'th', baseStyle))
   }
   // 行级判定：thead 内 / 全部 th → header 行
   const isHeader = inHeader || (cellCount > 0 && thCount === cellCount)
   return { isHeader, cells }
 }
 
-function walkTableCell(node: ParsedElement, ctx: BuildContext): TableCell {
+function walkTableCell(
+  node: ParsedElement,
+  ctx: BuildContext,
+  isTh: boolean,
+  baseStyle: InlineStyle,
+): TableCell {
   const colSpan = parsePositiveInt(getAttr(node, 'colspan'))
   const rowSpan = parsePositiveInt(getAttr(node, 'rowspan'))
-  const children = walkBlocks(adapter.getChildNodes(node), ctx, [])
+  // th 与浏览器默认渲染一致：文本加粗、内容居中（td 的显式样式 / 对齐可覆盖）
+  const thBase: InlineStyle = isTh ? { ...baseStyle, bold: true } : baseStyle
+  const cellStyle = inlineStyleFromElement(node, thBase)
+  const children = walkBlocks(adapter.getChildNodes(node), ctx, [], cellStyle)
+  // 单元格对齐（text-align / align 属性）下推到顶层无显式对齐的段落类块；
+  // 仅处理顶层 —— 嵌套表格 / blockquote 内的段落保持各自语义
+  const cellAlign = blockAlign(node) ?? (isTh ? 'center' : undefined)
+  if (cellAlign !== undefined) {
+    for (const child of children) {
+      if (
+        (child.kind === 'paragraph' ||
+          child.kind === 'heading' ||
+          child.kind === 'list-item' ||
+          child.kind === 'list-continuation') &&
+        child.align === undefined
+      ) {
+        child.align = cellAlign
+      }
+    }
+  }
   // 单元格至少给一个 paragraph，避免 docx 拒绝空 cell
   const safeChildren: Block[] =
     children.length > 0 ? children : [{ kind: 'paragraph', inlines: [] }]

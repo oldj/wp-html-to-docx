@@ -185,6 +185,8 @@ await htmlToDocx(html, {
 | `placeholder`  | 用 `alt` 文本占位        |
 | `error`        | 抛出错误                 |
 
+> **格式限制**：docx 只能嵌入 PNG / JPEG / GIF / BMP。检测到 WebP / SVG / AVIF / HEIC / TIFF / ICO（按 mime 与 magic bytes 双路识别）时同样走 `onUnresolvedImage` 策略，不会伪装成 PNG 嵌入产生 Word 里显示红叉的坏图。提供 `logger` 时，每张未嵌入的图片会输出一条 `warn` 说明原因。
+
 #### Node.js 示例（用 fetch）
 
 ```ts
@@ -240,16 +242,18 @@ await htmlToDocx(html, {
 
 支持 `<span style="...">` / `<p style="...">` 等元素上的常用 CSS 属性，自动叠加到对应 docx 样式。**不**实现完整的 CSS 选择器引擎、cascade 与 specificity——只解析直接出现在元素上的内联声明。
 
-| CSS 属性                                    | docx 映射                         | 说明                                                  |
-| ------------------------------------------- | --------------------------------- | ----------------------------------------------------- |
-| `color`                                     | `TextRun.color`                   | 命名色 / `#RGB` / `#RRGGBB` / `rgb()`                 |
-| `background` / `background-color`           | `TextRun.shading`（CLEAR + fill） | 同上；只取首个颜色 token                              |
-| `font-size`                                 | `TextRun.size`                    | `pt` / `px` / `em` / `rem` / `%`；`em` 以 12pt 为基准 |
-| `font-family`                               | `TextRun.font`                    | 取首项去引号                                          |
-| `font-weight: bold` 或数值 ≥ 600            | `bold: true`                      | 仅加法（不会用 `normal` 取消父级 bold）               |
-| `font-style: italic`                        | `italics: true`                   | 同上                                                  |
-| `text-decoration: underline / line-through` | `underline` / `strike`            | 支持多个值组合                                        |
-| `text-align`（块级元素）                    | `Paragraph.alignment`             | left / right / center / justify                       |
+块级元素（`p` / `h1`–`h6` / `li` / `td` / `blockquote` / `div` 等）自身 `style` 中的文本样式会沿「单链继承」下发给段内文本（如 `<div style="color:red"><p>x</p></div>` 中的 `x` 为红色）——这是浏览器继承语义的轻量子集。
+
+| CSS 属性                                    | docx 映射                         | 说明                                                                                                                     |
+| ------------------------------------------- | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `color`                                     | `TextRun.color`                   | 命名色 / `#RGB` / `#RRGGBB` / `rgb()`                                                                                    |
+| `background` / `background-color`           | `TextRun.shading`（CLEAR + fill） | 同上；只取首个颜色 token                                                                                                 |
+| `font-size`                                 | `TextRun.size`                    | `pt` / `px` / `em` / `rem` / `%`；`em` 以 12pt 为基准                                                                    |
+| `font-family`                               | `TextRun.font`                    | 取首项去引号                                                                                                             |
+| `font-weight: bold` 或数值 ≥ 600            | `bold: true`                      | 仅加法（不会用 `normal` 取消父级 bold）                                                                                  |
+| `font-style: italic`                        | `italics: true`                   | 同上                                                                                                                     |
+| `text-decoration: underline / line-through` | `underline` / `strike`            | 支持多个值组合                                                                                                           |
+| `text-align`（块级元素）                    | `Paragraph.alignment`             | left / right / center / justify；HTML4 遗留属性 `align="..."` 同样识别（CSS 优先）；`td`/`th` 上的对齐下推到单元格内段落 |
 
 ```html
 <p style="text-align: center">
@@ -359,10 +363,19 @@ npm install mathml2omml
 - **回跳箭头**：`<a class="footnote-backref">↩</a>`（或 `href="#fnref…"`）自动剥离——Word 脚注靠引用标记导航，无需回跳链接
 
 ```html
-<p>正文<sup class="wp-footnote-ref"><a href="#fn-1">[1]</a></sup>继续。</p>
-<div class="footnotes"><hr><ol>
-  <li id="fn-1">脚注内容，支持<strong>样式</strong>、<a href="https://example.com">链接</a>与 <br> 软换行。<a href="#fnref-1" class="footnote-backref">↩</a></li>
-</ol></div>
+<p>
+  正文<sup class="wp-footnote-ref"><a href="#fn-1">[1]</a></sup
+  >继续。
+</p>
+<div class="footnotes">
+  <hr />
+  <ol>
+    <li id="fn-1">
+      脚注内容，支持<strong>样式</strong>、<a href="https://example.com">链接</a>与 <br />
+      软换行。<a href="#fnref-1" class="footnote-backref">↩</a>
+    </li>
+  </ol>
+</div>
 ```
 
 ### 行为细节
@@ -371,7 +384,7 @@ npm install mathml2omml
 - 编号按定义在文末列表中的出现顺序分配（`fn-1`→1、`fn-2`→2…）
 - 文末定义容器**不再**作为正文渲染；容器自带的 `<hr>` 分隔线与 `<ol>` 编号交给 Word 处理
 - 引用了不存在的定义时，安全跳过该引用（不报错）；普通 `<sup>`（无脚注 class）不受影响
-- **限制**：脚注内容里的 `<img>` / `<math>` 暂不随异步资源加载（文本、内联样式、链接、`<br>` 等正常工作）
+- 脚注内容支持文本、内联样式、链接、`<br>` 软换行、`<img>` 图片与 `<math>` 公式（图片 / 公式与正文走同一套异步资源加载）
 
 ## API 速查
 

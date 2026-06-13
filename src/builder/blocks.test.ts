@@ -253,4 +253,21 @@ describe('builder XML 断言 - blockquote 视觉一致性', () => {
     expect(indentMatches.length).toBeGreaterThanOrEqual(2)
     expect(xml).toContain('Consolas')
   })
+
+  it('嵌套 blockquote：内层缩进逐层叠加（720 / 1440）', async () => {
+    // 防回归：嵌套层曾与父层同缩进（都是 720），多层引用看不出层次
+    const xml = await getDocumentXml(
+      '<blockquote><p>outer</p><blockquote><p>inner</p></blockquote></blockquote>',
+    )
+    const outerPara = xml.slice(
+      xml.lastIndexOf('<w:p>', xml.indexOf('>outer<')),
+      xml.indexOf('>outer<'),
+    )
+    const innerPara = xml.slice(
+      xml.lastIndexOf('<w:p>', xml.indexOf('>inner<')),
+      xml.indexOf('>inner<'),
+    )
+    expect(outerPara).toMatch(/<w:ind[^>]*w:left="720"/)
+    expect(innerPara).toMatch(/<w:ind[^>]*w:left="1440"/)
+  })
 })
