@@ -30,22 +30,22 @@ import {
   type PageNumberPosition,
 } from '../options.js'
 import { resolvePageSizeTwip, safeNonNegativeInt, safeTwip } from '../utils/units.js'
+import { makeWarn, type WarnFn } from '../utils/log.js'
 
 type Slot = 'left' | 'center' | 'right'
 type Region = 'header' | 'footer'
 
 // 槽位内容：用对象 marker 区分用户文本与页码模板，避免靠字符串前缀判别
-type SlotContent =
-  | { kind: 'text'; text: string }
-  | { kind: 'pageNumber'; template: string }
+type SlotContent = { kind: 'text'; text: string } | { kind: 'pageNumber'; template: string }
 
 export function buildSection(
   options: HtmlToDocxOptions,
   children: readonly FileChild[],
 ): ISectionOptions {
+  const warn = makeWarn(options.logger)
   const page = options.page ?? {}
   const orientation = page.orientation ?? DEFAULT_OPTIONS.page.orientation
-  const size = resolveSize(page.size ?? DEFAULT_OPTIONS.page.size, orientation)
+  const size = resolveSize(page.size ?? DEFAULT_OPTIONS.page.size, orientation, warn)
   const margin = resolveMargin(options)
   const pageNumbers = resolvePageNumbers(options.pageNumber)
 
@@ -53,11 +53,13 @@ export function buildSection(
     options.header,
     'header',
     options.pageNumber,
+    warn,
   )
   const footerParagraphs = buildHeaderFooterParagraphs(
     options.footer,
     'footer',
     options.pageNumber,
+    warn,
   )
 
   return {
@@ -83,14 +85,14 @@ export function buildSection(
 function resolveSize(
   size: NonNullable<HtmlToDocxOptions['page']>['size'] & {},
   orientation: 'portrait' | 'landscape',
+  warn: WarnFn,
 ): IPageSizeAttributes {
   // 始终传 portrait 尺寸 + orientation 标志，由 docx 决定最终纵横呈现
-  const dim = resolvePageSizeTwip(size)
+  const dim = resolvePageSizeTwip(size, warn)
   return {
     width: dim.width,
     height: dim.height,
-    orientation:
-      orientation === 'landscape' ? PageOrientation.LANDSCAPE : PageOrientation.PORTRAIT,
+    orientation: orientation === 'landscape' ? PageOrientation.LANDSCAPE : PageOrientation.PORTRAIT,
   }
 }
 
@@ -132,14 +134,15 @@ function buildHeaderFooterParagraphs(
   value: HeaderFooterValue | undefined,
   region: Region,
   pageNumber: PageNumberOptions | undefined,
+  warn: WarnFn,
 ): Paragraph[] {
   const slots = normalizeSlots(value)
   const pn = resolveSlottedPageNumber(pageNumber, region)
   if (pn !== null) {
-    // 把页码内容放进对应槽位（覆盖；与原内容并存时给出 console.warn）
+    // 把页码内容放进对应槽位（覆盖；与原内容并存时给出 warning）
     const existing = slots[pn.slot]
     if (existing !== undefined && !(existing.kind === 'text' && existing.text === '')) {
-      console.warn(
+      warn(
         `pageNumber.position '${pn.slot}' overlaps with existing ${region} content; pageNumber takes priority`,
       )
     }
@@ -176,9 +179,7 @@ function resolveSlottedPageNumber(
   return { slot, template: options.template ?? '{PAGE}' }
 }
 
-function composeThreeSlotParagraph(
-  slots: Record<Slot, SlotContent | undefined>,
-): Paragraph {
+function composeThreeSlotParagraph(slots: Record<Slot, SlotContent | undefined>): Paragraph {
   // 单段三槽对齐：left / center / right，用 tab stops 实现
   // 中部 tab 在页面中间（4500 twip），右部 tab 在页面右侧（约 9000 twip / Letter 内宽 6.5in）
   const children: ParagraphChild[] = []

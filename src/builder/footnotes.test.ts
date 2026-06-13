@@ -83,6 +83,20 @@ describe('脚注 - docx 原生页面底部脚注', () => {
     expect(doc).toContain('2')
   })
 
+  it('脚注内容中的图片与公式正常渲染（不丢失 / 不退化为占位）', async () => {
+    // 脚注 blocks 不在主 IR 中，资源收集若漏掉它们，图片静默消失、公式退化为 [math]
+    const png =
+      'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNgAAIAAAUAAeImBZsAAAAASUVORK5CYII='
+    const html =
+      '<p>x<sup class="wp-footnote-ref"><a href="#fn-1">[1]</a></sup></p>' +
+      `<div class="footnotes"><ol><li id="fn-1">note <img src="${png}"/> and <math><mi>z</mi></math></li></ol></div>`
+    const { footnotes } = await getParts(html)
+    expect(footnotes).toBeDefined()
+    expect(footnotes).toContain('<w:drawing>')
+    expect(footnotes).toContain('<m:oMath')
+    expect(footnotes).not.toContain('[math]')
+  })
+
   it('脚注定义容器嵌在 <li> 内：注册不受影响，但内容不在正文重复渲染', async () => {
     // 边缘结构：脚注定义容器被包进 <li>。collectFootnoteDefs 全递归注册不受影响，
     // 但正文走查若把 li 内的 div.footnotes 当普通块拍扁，脚注内容会作为列表项重复出现。

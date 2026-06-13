@@ -8,6 +8,8 @@
 //    mathml2omml 不识别。
 // 3. 模块级缓存导入结果与「是否警告过」的标志，避免重复 IO 与噪声。
 
+import { makeWarn, type WarnFn } from '../utils/log.js'
+
 const MATHML_NS = 'http://www.w3.org/1998/Math/MathML'
 
 type Mml2Omml = (mathml: string, options?: { disableDecode?: boolean }) => string
@@ -39,13 +41,18 @@ export function _resetForTest(): void {
 /**
  * 把 MathML 字符串转成 OMML 字符串。
  * 失败（依赖缺失 / 转换抛错）时返回 null，调用方负责退回占位。
+ *
+ * @param warn 警告出口；调用方传入经 makeWarn(logger) 构造的函数，缺省退 console.warn
  */
-export async function mathmlToOmml(mathml: string): Promise<string | null> {
+export async function mathmlToOmml(
+  mathml: string,
+  warn: WarnFn = makeWarn(undefined),
+): Promise<string | null> {
   const conv = await loadConverter()
   if (conv === null) {
     if (!warned) {
       warned = true
-      console.warn(
+      warn(
         'wp-html-to-docx: <math> detected but optional peer "mathml2omml" is not installed. ' +
           'Install it to enable real OMML output; falling back to "[math]" placeholder.',
       )
@@ -57,7 +64,7 @@ export async function mathmlToOmml(mathml: string): Promise<string | null> {
     return _escapeOmmlTextContent(raw)
   } catch (err) {
     // 转换异常（极端 MathML 输入）：吞掉并降级，避免整个文档构建失败
-    console.warn('wp-html-to-docx: MathML conversion failed, falling back:', err)
+    warn('wp-html-to-docx: MathML conversion failed, falling back:', err)
     return null
   }
 }
@@ -73,15 +80,18 @@ export async function mathmlToOmml(mathml: string): Promise<string | null> {
  */
 export function _escapeOmmlTextContent(omml: string): string {
   // \b 边界防止误匹 <m:type ...> 这类同前缀的标签（regex 否则会从 <m:type 起步）
-  return omml.replace(/<m:t\b([^>]*)>([\s\S]*?)<\/m:t>/g, (_match, attrs: string, content: string) => {
-    // 现版 mml2omml 在 <m:t> 内全部输出原始字符；但负向预查跳过已合法转义的 entity，
-    // 避免未来 mml2omml 改变行为时把 `&amp;` 二次转成 `&amp;amp;`
-    const safe = content
-      .replace(/&(?!(?:amp|lt|gt|quot|apos|#\d+|#x[0-9a-fA-F]+);)/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-    return `<m:t${attrs}>${safe}</m:t>`
-  })
+  return omml.replace(
+    /<m:t\b([^>]*)>([\s\S]*?)<\/m:t>/g,
+    (_match, attrs: string, content: string) => {
+      // 现版 mml2omml 在 <m:t> 内全部输出原始字符；但负向预查跳过已合法转义的 entity，
+      // 避免未来 mml2omml 改变行为时把 `&amp;` 二次转成 `&amp;amp;`
+      const safe = content
+        .replace(/&(?!(?:amp|lt|gt|quot|apos|#\d+|#x[0-9a-fA-F]+);)/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+      return `<m:t${attrs}>${safe}</m:t>`
+    },
+  )
 }
 
 /**

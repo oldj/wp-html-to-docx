@@ -8,6 +8,7 @@ import {
   type LengthUnit,
   type PaperSize,
 } from '../options.js'
+import { makeWarn, type WarnFn } from './log.js'
 
 /** 1 inch = 1440 twip */
 const TWIP_PER_INCH = 1440
@@ -42,15 +43,20 @@ const PAPER_MM: Record<PaperSize, { width: number; height: number }> = {
  *
  * JS 调用方可能传入未在 PaperSize 联合中的字符串（拼写错误 / 类型断言绕过），
  * 此时给出 warning 并降级到 A4，避免 NPE 让整次构建崩溃。
+ *
+ * @param warn 警告出口；调用方传入经 makeWarn(logger) 构造的函数，缺省退 console.warn
  */
-export function resolvePageSizeTwip(size: PaperSize | CustomPageSize): {
+export function resolvePageSizeTwip(
+  size: PaperSize | CustomPageSize,
+  warn: WarnFn = makeWarn(undefined),
+): {
   width: number
   height: number
 } {
   if (typeof size === 'string') {
     const paper = PAPER_MM[size] ?? PAPER_MM.A4
     if (PAPER_MM[size] === undefined) {
-      console.warn(`wp-html-to-docx: unknown PaperSize "${size}", falling back to A4`)
+      warn(`wp-html-to-docx: unknown PaperSize "${size}", falling back to A4`)
     }
     return {
       width: toTwip(paper.width, 'mm'),
@@ -93,7 +99,7 @@ export function safeNonNegativeInt(value: unknown, fallback: number): number {
 export function pageContentWidthPx(options: HtmlToDocxOptions): number {
   const page = options.page ?? {}
   const orientation = page.orientation ?? DEFAULT_OPTIONS.page.orientation
-  const dim = resolvePageSizeTwip(page.size ?? DEFAULT_OPTIONS.page.size)
+  const dim = resolvePageSizeTwip(page.size ?? DEFAULT_OPTIONS.page.size, makeWarn(options.logger))
   // resolvePageSizeTwip 始终返回 portrait 宽高；横向时实际页宽取其 height
   const pageWidthTwip = orientation === 'landscape' ? dim.height : dim.width
   const m = { ...DEFAULT_OPTIONS.page.margin, ...(page.margin ?? {}) }

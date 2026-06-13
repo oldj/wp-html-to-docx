@@ -46,6 +46,18 @@ describe('builder XML - 列表', () => {
     expect(parsed[0]?.numId).toBeDefined()
     expect(parsed[0]?.numId).toBe(parsed[1]?.numId)
   })
+
+  it('list-continuation 渲染：嵌套列表之后的文本成独立段，带缩进、无编号', async () => {
+    const { document } = await getDocs(
+      '<ul><li>head<ul><li>nested</li></ul>tail text</li></ul>',
+    )
+    // tail text 段：缩进对齐到 list 文本起点（720 * (level+1)），但不带 numPr
+    const at = document.indexOf('tail text')
+    expect(at).toBeGreaterThan(-1)
+    const para = document.slice(document.lastIndexOf('<w:p>', at), at)
+    expect(para).toMatch(/<w:ind[^>]*w:left="720"/)
+    expect(para).not.toContain('<w:numPr>')
+  })
 })
 
 describe('builder XML - blockquote / hr / pre', () => {

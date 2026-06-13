@@ -189,7 +189,10 @@ function appendBlockquote(
     return
   }
   if (block.kind === 'blockquote') {
-    for (const child of block.children) appendBlockquote(child, out, ctx, extraIndent)
+    // 嵌套 blockquote：每层再叠加一个基础缩进，形成视觉层次（与浏览器嵌套缩进一致）；
+    // 此前嵌套层与父层同缩进，多层引用看起来是同一层
+    const nested = (extraIndent ?? 0) + BLOCKQUOTE_BASE_INDENT
+    for (const child of block.children) appendBlockquote(child, out, ctx, nested)
     return
   }
   // list-item / table / hr / math / pageBreak：维持原渲染
