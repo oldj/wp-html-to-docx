@@ -97,6 +97,14 @@ export function safeNonNegativeInt(value: unknown, fallback: number): number {
  * 与 buildSection 的尺寸/边距解析保持一致：始终用 portrait 尺寸 + orientation 决定实际页宽。
  */
 export function pageContentWidthPx(options: HtmlToDocxOptions): number {
+  return (pageContentWidthTwip(options) / TWIP_PER_INCH) * PX_PER_INCH
+}
+
+/**
+ * 页面正文可用宽度（twip）= 页宽 − 左右页边距。
+ * 表格网格（`tblGrid` 的 `gridCol`）以 twip 计，故与 pageContentWidthPx 共用同一套解析。
+ */
+export function pageContentWidthTwip(options: HtmlToDocxOptions): number {
   const page = options.page ?? {}
   const orientation = page.orientation ?? DEFAULT_OPTIONS.page.orientation
   const dim = resolvePageSizeTwip(page.size ?? DEFAULT_OPTIONS.page.size, makeWarn(options.logger))
@@ -107,6 +115,5 @@ export function pageContentWidthPx(options: HtmlToDocxOptions): number {
   const def = DEFAULT_OPTIONS.page.margin
   const left = safeTwip(m.left, unit, def.left)
   const right = safeTwip(m.right, unit, def.right)
-  const contentTwip = Math.max(1, pageWidthTwip - left - right)
-  return (contentTwip / TWIP_PER_INCH) * PX_PER_INCH
+  return Math.max(1, pageWidthTwip - left - right)
 }

@@ -13,7 +13,7 @@ import {
 import { collectInlines, inlineStyleFromElement, isInlineTag } from './inlineCollector.js'
 import type { BuildContext } from './buildContext.js'
 import { isWhitespaceOnly } from '../utils/html.js'
-import { parseInlineStyle, parsePageBreaks, parseTextAlign } from '../utils/css.js'
+import { parseInlineStyle, parsePageBreaks, parseTextAlign, parseWidthValue } from '../utils/css.js'
 import { serializeNode } from '../utils/serializeNode.js'
 
 const HEADING_LEVELS: Record<string, 1 | 2 | 3 | 4 | 5 | 6> = {
@@ -265,11 +265,16 @@ function emitBlockForElement(
       return [{ kind: 'pre', text: extractPreText(node) }]
     case 'table': {
       const cellPaddingPx = parseNonNegativeInt(getAttr(node, 'cellpadding'))
+      const rows = walkTable(node, ctx, ownStyle)
+      const columnWidths = collectColumnWidths(node, rows)
+      const widthPct = tableWidthPct(node)
       return [
         {
           kind: 'table',
-          rows: walkTable(node, ctx, ownStyle),
+          rows,
           ...(cellPaddingPx !== undefined ? { cellPaddingPx } : {}),
+          ...(columnWidths !== undefined ? { columnWidths } : {}),
+          ...(widthPct !== undefined ? { widthPct } : {}),
         },
       ]
     }
@@ -503,6 +508,86 @@ function walkTable(
   return rows
 }
 
+/**
+ * 读取 `<table style="width: X%">` / `<table width="X%">` 的表宽百分比。
+ *
+ * 只认百分比：绝对宽度（px / pt）要落到 OOXML 得先知道版心宽度，而「表格比版心宽」时
+ * 该截断还是该缩放没有唯一解；相对值则天然安全，直接就是 `tblW pct` 的语义。
+ * 缺省时返回 undefined，builder 按 100% 满宽处理（本库历来的行为）。
+ */
+function tableWidthPct(node: ParsedElement): number | undefined {
+  const decls = parseInlineStyle(getAttr(node, 'style'))
+  const parsed = parseWidthValue(decls['width']) ?? parseWidthValue(getAttr(node, 'width'))
+  if (parsed === undefined || !parsed.isPercent) return undefined
+  // >100% 会让表格溢出版心，钳到满宽
+  return Math.min(100, parsed.value)
+}
+
+/**
+ * 从 `<colgroup>` / `<col>` 读取各列宽度，归一化为合计 100 的百分比数组。
+ *
+ * - `<col span="N">` 按 HTML 语义展开为 N 个等宽列。
+ * - 宽度取 `style="width: …"`，缺失时回退 HTML 遗留属性 `width`。
+ * - 单位不做换算：最终只用比例，同表内单位一致时结果与单位无关。
+ *
+ * 返回 undefined（交给 builder 退回等分）的情形：没有 colgroup、有列没声明宽度、
+ * 或列数与实际网格列数对不上 —— 后者若强行下发会让 `tblGrid` 与 `gridSpan` 错位，
+ * 表格在 Word 里整体错列，比丢掉比例严重得多。
+ */
+function collectColumnWidths(node: ParsedElement, rows: TableRow[]): number[] | undefined {
+  const weights = collectColWeights(node)
+  if (weights === undefined || weights.length === 0) return undefined
+  if (weights.length !== gridColumnCount(rows)) return undefined
+  const total = weights.reduce((sum, w) => sum + w, 0)
+  if (total <= 0) return undefined
+  return weights.map((w) => (w / total) * 100)
+}
+
+/** 扫描 table 直接子节点下的 col 定义；任一列缺宽即返回 undefined（比例无从谈起） */
+function collectColWeights(node: ParsedElement): number[] | undefined {
+  const cols: ParsedElement[] = []
+  for (const child of adapter.getChildNodes(node)) {
+    if (!isElement(child)) continue
+    if (child.tagName === 'col') {
+      cols.push(child)
+      continue
+    }
+    if (child.tagName !== 'colgroup') continue
+    for (const inner of adapter.getChildNodes(child)) {
+      if (isElement(inner) && inner.tagName === 'col') cols.push(inner)
+    }
+  }
+  if (cols.length === 0) return undefined
+
+  const weights: number[] = []
+  for (const col of cols) {
+    const decls = parseInlineStyle(getAttr(col, 'style'))
+    const parsed = parseWidthValue(decls['width']) ?? parseWidthValue(getAttr(col, 'width'))
+    if (parsed === undefined) return undefined
+    // span 缺省为 1；每个被 span 覆盖的列各自取这一份宽度（HTML 语义，不是均分）
+    const span = parsePositiveInt(getAttr(col, 'span')) ?? 1
+    for (let i = 0; i < span; i += 1) weights.push(parsed.value)
+  }
+  return weights
+}
+
+/**
+ * 表格网格列数 = 各行 colspan 之和的最大值。
+ *
+ * 注意：不追踪来自上方行的 rowspan 占位，因此对「首行被 rowspan 占满、后续行更宽」这类
+ * 畸形表会低估。这与 docx 库自身推断网格的口径同源，且低估只会导致列宽被丢弃（走 undefined
+ * 分支），不会写出错位的表格。
+ */
+function gridColumnCount(rows: TableRow[]): number {
+  let max = 0
+  for (const row of rows) {
+    let count = 0
+    for (const cell of row.cells) count += cell.colSpan ?? 1
+    if (count > max) max = count
+  }
+  return max
+}
+
 function collectRows(
   node: ParsedElement,
   inHeader: boolean,
@@ -525,6 +610,7 @@ function collectRows(
       out.push(walkTableRow(child, inHeader, ctx, baseStyle))
       continue
     }
+    // caption 暂不渲染；colgroup / col 只承载列宽，由 collectColumnWidths 单独扫描，不产出行
     if (tag === 'caption' || tag === 'colgroup' || tag === 'col') continue
   }
 }

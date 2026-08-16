@@ -219,7 +219,7 @@ await htmlToDocx(html, {
 
 **块级**：`p`、`h1-h6`、`ul`、`ol`、`li`（含多级嵌套，自动切换 numbering）、`blockquote`、`hr`、`pre`、`code`
 
-**表格**：`table`、`thead`、`tbody`、`tfoot`、`tr`、`th`、`td`（含 `colspan` / `rowspan`；`thead` 行自动加粗 + 浅灰背景）
+**表格**：`table`、`thead`、`tbody`、`tfoot`、`tr`、`th`、`td`、`colgroup`、`col`（含 `colspan` / `rowspan` 与列宽，见 [表格列宽](#表格列宽)；`thead` 行自动加粗 + 浅灰背景）
 
 **内联**：`strong/b`、`em/i`、`u`、`s/strike/del`、`code`（行内代码）、`a`、`span`、`br`、`img`、`math`（见下文）
 
@@ -233,10 +233,45 @@ await htmlToDocx(html, {
 - `<a>` 与内联格式可任意组合（如 `<a><strong>x</strong></a>`）
 - `<li>` 内含多个 `<p>`（或块级 + 裸文本）时，合并为单个列表项段落，段间以软换行 `<w:br/>` 分隔。这样**编号 / 项目符号只在首段出现一次**，后续段在同一项内自动换行并对齐到列表文本起点（等同 Word 里的 Shift+Enter）。OOXML 的 `<w:p>` 一旦带 numbering 引用就必然产生新编号，所以无法用"独立段落"语义来表达"同一编号下多行"——这是 Word 列表语义的固有约束
 - `<li>` 内的 `<table>` / `<pre>` / `<blockquote>` / `<hr>` 作为**独立块**输出，结构原样保留（表格的 `<tr>/<td>`、pre 的等宽与空白、blockquote 的左边线视觉等都不会被拍扁）。这些块会**跟随列表项的层级缩进**：
-  - `<table>`：注入 `<w:tblInd>` 与列表层级一致的左缩进；同时把 `tblW` 从 `pct 100%` 切到 `auto`，避免缩进 + 满宽导致表格右溢出页面边距
+  - `<table>`：注入 `<w:tblInd>` 与列表层级一致的左缩进；同时把 `tblW` 从 `pct 100%` 切到 `auto`，避免缩进 + 满宽导致表格右溢出页面边距。带 `<colgroup>` 时列宽按「版心 − 缩进」分配
   - `<pre>` / `<hr>`：每个段落带相同的 `w:left` 缩进
   - `<blockquote>`：自带 720 缩进与外层 list 缩进**叠加**（嵌套缩进语义自洽，level 0 下最终为 1440）
   - 缩进值由 list 层级决定（每层 720 twip），等同 list-item 的文本起点位置，与浏览器渲染 `<li><table>` 的直觉一致
+
+## 表格列宽
+
+`<colgroup>` / `<col>` 上的列宽会转成 OOXML 的 `<w:tblGrid>`，让手工调过的列比例在 Word 里保留下来。
+
+```html
+<table style="width: 100%">
+  <colgroup>
+    <col style="width: 11.1111%" />
+    <col style="width: 33.3333%" />
+    <col style="width: 55.5556%" />
+  </colgroup>
+  <tr>
+    <td>窄</td>
+    <td>中</td>
+    <td>宽</td>
+  </tr>
+</table>
+```
+
+产出 `<w:gridCol>` 三列，宽度比 1:3:5，并写入 `<w:tblLayout w:type="fixed"/>` 锁定布局（否则 Word 的 autofit 会按内容重算列宽，比例随之走样）。
+
+细节：
+
+- 宽度取 `<col style="width: …">`，缺失时回退 HTML 遗留属性 `<col width="…">`。
+- **单位不限**：`%` / `px` / `pt` / `em` 都可以。列宽最终只用来算比例，同一张表内单位一致时结果与单位无关。
+- `<col span="N">` 按 HTML 语义展开为 N 个等宽列。
+- `gridCol` 的绝对值 = 版心宽度 × 该列占比（随 `page.size` / `page.margin` 变化），合计精确等于表宽。
+- 表宽取 `<table style="width: X%">` / `<table width="X%">` 写入 `<w:tblW w:type="pct">`；未声明或声明为绝对值时按 100% 满宽（本库历来的行为）。
+
+以下情况**放弃列宽**、退回 Word 等分（宁可丢比例也不写出错位的网格）：
+
+- 没有 `<colgroup>` / `<col>`；
+- 有列没声明宽度（无法推断其余列）；
+- `<col>` 数与表格实际网格列数（各行 `colspan` 之和的最大值）对不上——强行下发会让 `tblGrid` 与 `gridSpan` 错位，表格在 Word 里整体错列。
 
 ## 内联 `style` 属性
 

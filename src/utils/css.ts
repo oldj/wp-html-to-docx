@@ -85,7 +85,10 @@ export function parseColor(value: string | undefined): string | undefined {
     const r = clampByte(parseInt(rgb[1]!, 10))
     const g = clampByte(parseInt(rgb[2]!, 10))
     const b = clampByte(parseInt(rgb[3]!, 10))
-    return [r, g, b].map((n) => n.toString(16).padStart(2, '0')).join('').toUpperCase()
+    return [r, g, b]
+      .map((n) => n.toString(16).padStart(2, '0'))
+      .join('')
+      .toUpperCase()
   }
   return undefined
 }
@@ -157,6 +160,32 @@ export function isBoldWeight(value: string | undefined): boolean {
   if (v === 'bold' || v === 'bolder') return true
   const n = parseInt(v, 10)
   return Number.isFinite(n) && n >= 600
+}
+
+/** 宽度声明的解析结果：`value` 为数值，`isPercent` 标记它是否为百分比 */
+export type WidthValue = { value: number; isPercent: boolean }
+
+/**
+ * 解析 `<col>` / `<table>` 的宽度声明，用于表格列宽。
+ * 接受 `25%`、`120px`、`120`（HTML 遗留属性的裸数字按像素）以及 `pt` / `em` 等其他 CSS 单位。
+ *
+ * 单位不做换算、原样带出：列宽最终只用来算**比例**，同一张表内单位一致时比例与单位无关；
+ * 是否为百分比由 `isPercent` 单独给出，供表宽这种必须区分绝对值与相对值的场景判断。
+ *
+ * 非正数 / 无法识别（`auto`、`calc(...)` 等）返回 undefined。
+ */
+export function parseWidthValue(raw: string | undefined): WidthValue | undefined {
+  if (raw === undefined) return undefined
+  // 粘贴自网页的样式常带 `!important`，先剥掉，否则 "25% !important" 不以 % 结尾会被判成绝对值
+  const s = raw
+    .trim()
+    .replace(/\s*!\s*important$/i, '')
+    .trim()
+  const m = /^(\d+(?:\.\d+)?|\.\d+)\s*(%|px|pt|pc|in|cm|mm|em|rem)?$/i.exec(s)
+  if (!m) return undefined
+  const value = parseFloat(m[1]!)
+  if (!Number.isFinite(value) || value <= 0) return undefined
+  return { value, isPercent: m[2] === '%' }
 }
 
 /** text-align: 仅识别 left / right / center / justify */
