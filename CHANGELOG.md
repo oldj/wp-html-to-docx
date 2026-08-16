@@ -8,6 +8,7 @@
 
 ### Added
 
+- 表格列宽：读取 `<colgroup>` / `<col>` 的列宽（`style="width"` 与遗留属性 `width` 均可，支持 `%` / `px` / `pt` 等单位与 `span`），转成 OOXML `<w:tblGrid>` + `<w:tblLayout w:type="fixed">`，手工调过的列比例现在能保留到 Word；此前列宽被丢弃、一律由 Word 等分。列宽不完整或列数与网格对不上时退回等分，不写出错位的网格。
 - 上标 / 下标：`<sub>` / `<sup>` 现在真正产生上下标效果（OOXML `<w:vertAlign>`）。此前二者虽被识别为内联标签却无对应样式映射，仅当普通文本透传。带 `wp-footnote-ref` / `footnote-ref` class 的脚注引用 `<sup>` 不受影响，仍走脚注路径。
 - 脚注：自动识别「脚注引用 + 文末定义」结构（兼容 WonderPen 的 `<sup class="wp-footnote-ref">` / `<div class="footnotes">` 与 markdown-it 的 `footnote-ref` / `<section class="footnotes">`），转换为 docx **原生页面底部脚注**（`FootnoteReferenceRun` + `Document.footnotes`，Word/WPS 自动编号、悬停可见）。回跳箭头 `footnote-backref` 自动剥离；文末定义容器不再作为正文渲染。无需配置，仅命中专用 class 才触发。
 - 块级元素文本样式下发：`<p>` / `<h1>`–`<h6>` / `<li>` / `<td>` / `<blockquote>` / `<div>` 等块级元素自身 `style` 中的文本样式（color / font-size / font-weight 等「进阶 B」范围）现在沿「单链继承」下发给段内文本，此前这些样式被忽略。仍不做选择器 / specificity 等完整 cascade。
@@ -16,6 +17,10 @@
 - 图片格式防护：检测 docx 不支持的 WebP / SVG / AVIF / HEIC / TIFF / ICO（mime + magic bytes 双路识别），按 `onUnresolvedImage` 策略处理（默认 skip），不再伪装成 PNG 嵌入产生 Word 中显示红叉的坏图。
 - `logger` 现在承接库内全部非致命 warning（未知纸张名、页码槽位冲突、公式转换失败、图片未嵌入原因等）；未提供 logger 时维持原有 console / 静默行为不变。
 - 导出 `TableCellMargin` 类型（此前 `tableCellMargin` 选项的类型未公开导出）。
+
+### Changed
+
+- 表宽：`<table style="width: X%">` / `<table width="X%">` 现在写入 `<w:tblW w:type="pct">` 对应的百分比；此前一律忽略、按 100% 满宽输出。**这是可见的行为变化**——声明过百分比表宽的 HTML 转出来会比以前窄。未声明宽度或声明为绝对值（`600px`）时仍按 100% 满宽，与此前一致。
 
 ### Fixed
 

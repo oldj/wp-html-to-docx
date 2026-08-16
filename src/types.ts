@@ -87,7 +87,25 @@ export type Block =
    * 在 builder 阶段优先于 options.tableCellMargin。未指定时为 undefined，
    * builder 退回到 options 默认值。
    */
-  | { kind: 'table'; rows: TableRow[]; indent?: number; cellPaddingPx?: number }
+  | {
+      kind: 'table'
+      rows: TableRow[]
+      indent?: number
+      cellPaddingPx?: number
+      /**
+       * 各列宽度占表宽的百分比，来自 HTML `<colgroup><col width>`（已按 `span` 展开）。
+       * 值已归一化为合计 100，长度等于表格网格列数。
+       *
+       * 只在「每一列都声明了宽度、且列数与网格列数一致」时才有值 —— 部分列缺宽或列数对不上时
+       * 无法安全地推断其余列，此时置 undefined 让 builder 退回等分，宁可丢比例也不写出错位的网格。
+       */
+      columnWidths?: number[]
+      /**
+       * 表格自身宽度占版心的百分比，来自 `<table style="width: X%">` / `<table width="X%">`。
+       * 缺省（undefined）时按 100% 满宽处理，与本库历来的行为一致。
+       */
+      widthPct?: number
+    }
   | { kind: 'math'; mathml: string; display: 'inline' | 'block' }
   /** 块级分页符：来源 <hr class="page-break"> / <wp-page-break> / 块级元素 CSS page-break-* */
   | { kind: 'pageBreak' }
