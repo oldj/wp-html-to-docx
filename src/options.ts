@@ -165,8 +165,11 @@ export type HtmlToDocxOptions = {
   /**
    * 可选日志钩子。提供后，库在执行入口会调用一次：
    *   logger('info', `wp-html-to-docx vX.Y.Z`)
-   * 用于在调用方排查实际装载的版本（例如怀疑包管理器命中了缓存中的旧版时）。
-   * 不提供则完全静默，不会向 console 写任何内容。
+   * 用于在调用方排查实际装载的版本（例如怀疑包管理器命中了缓存中的旧版时）。不提供则不打印这行。
+   *
+   * 另外，库内的非致命警告（未知纸张名、非法 listLevels、公式转换失败等）提供后统一改走
+   * logger('warn', ...)，便于宿主集中采集；不提供时仍会退回 console.warn。
+   * 只有「静默跳过」本身就是文档化语义的场景（如 onUnresolvedImage: 'skip' 的图片）才完全不出声。
    */
   logger?: Logger
 }

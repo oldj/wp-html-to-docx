@@ -153,7 +153,9 @@ await htmlToDocx(html, {
   preserveWhitespace: false,
 
   // 可选日志钩子。提供后，库在执行入口会以 'info' 级别打印一行版本号，
-  // 便于排查"是不是装到了旧版"。不提供则完全静默。
+  // 便于排查"是不是装到了旧版"；不提供则不打印这行。
+  // 库内的非致命警告（未知纸张名、非法 listLevels、公式转换失败等）提供后统一走 logger('warn')，
+  // 不提供时退回 console.warn。
   logger: (level, message, ...args) => {
     // level: 'debug' | 'info' | 'warn' | 'error'
     console[level === 'debug' ? 'log' : level](message, ...args)
