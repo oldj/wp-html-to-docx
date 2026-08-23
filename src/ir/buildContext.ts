@@ -8,7 +8,13 @@ import type { ILevelsOptions } from 'docx'
 import type { HtmlToDocxOptions } from '../options.js'
 import type { Block } from '../types.js'
 import type { DocxImageType } from '../utils/imageType.js'
-import { bulletLevels, decimalLevels } from '../builder/numbering.js'
+import {
+  listLevels,
+  resolveListLevelScheme,
+  type ListLevelScheme,
+  type ListSpec,
+} from '../builder/numbering.js'
+import { makeWarn } from '../utils/log.js'
 
 export type NumberingEntry = {
   reference: string
@@ -43,18 +49,25 @@ export class BuildContext {
   footnotes = new Map<string, FootnoteEntry>()
   private listSeq = 0
   private footnoteSeq = 0
+  /** options.listLevels 解析后的层级方案，所有 reference 共用 */
+  private readonly listScheme: ListLevelScheme
 
   constructor(options: HtmlToDocxOptions) {
     this.options = options
+    this.listScheme = resolveListLevelScheme(options.listLevels, makeWarn(options.logger))
   }
 
-  /** 创建并注册一个新 list reference，返回 reference id */
-  registerList(ordered: boolean): string {
+  /**
+   * 创建并注册一个新 list reference，返回 reference id。
+   * spec 给定时，该 reference 在 spec.level 这一层采用元素自己指定的格式 / 起始序号，
+   * 其余层仍是默认层级方案（见 builder/numbering.ts）。
+   */
+  registerList(ordered: boolean, spec?: ListSpec): string {
     this.listSeq += 1
     const reference = `numbering-${this.listSeq}`
     this.numbering.push({
       reference,
-      levels: ordered ? decimalLevels() : bulletLevels(),
+      levels: listLevels(ordered, spec, this.listScheme),
     })
     return reference
   }

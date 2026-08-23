@@ -8,6 +8,10 @@
 
 ### Added
 
+- 列表编号层级方案：嵌套列表的项目符号 / 编号按深度三级一循环（`ul`：• ◦ ▪；`ol`：1. a. i.），与 Word / Google Docs 及 WonderPen 各渲染场景一致；此前所有层级都是 `•` 与 `1.`。
+- 单个列表指定格式：读取 `data-list-style` / `style="list-style-type"` / HTML `type` 属性（按此优先级），映射到 OOXML `numFmt`，支持十进制、字母、罗马与三种中文数字（`cjk-decimal` / `simp-chinese-informal` / `trad-chinese-informal`，顿号后缀）及 `none`；指定格式只作用于该列表所在的层，其内嵌套的未指定列表仍按默认方案。
+- `<ol start="N">`：起始序号写入 numbering 定义，此前被忽略、一律从 1 起。
+- 新选项 `listLevels`：整体替换层级默认方案（`ordered` / `bullet` 各一组按深度循环的 `list-style-type` 关键字），供宿主把全局编号设置传进来；非法项跳过并 `warn`，整组非法回退默认。
 - 表格列宽：读取 `<colgroup>` / `<col>` 的列宽（`style="width"` 与遗留属性 `width` 均可，支持 `%` / `px` / `pt` 等单位与 `span`），转成 OOXML `<w:tblGrid>` + `<w:tblLayout w:type="fixed">`，手工调过的列比例现在能保留到 Word；此前列宽被丢弃、一律由 Word 等分。列宽不完整或列数与网格对不上时退回等分，不写出错位的网格。
 - 上标 / 下标：`<sub>` / `<sup>` 现在真正产生上下标效果（OOXML `<w:vertAlign>`）。此前二者虽被识别为内联标签却无对应样式映射，仅当普通文本透传。带 `wp-footnote-ref` / `footnote-ref` class 的脚注引用 `<sup>` 不受影响，仍走脚注路径。
 - 脚注：自动识别「脚注引用 + 文末定义」结构（兼容 WonderPen 的 `<sup class="wp-footnote-ref">` / `<div class="footnotes">` 与 markdown-it 的 `footnote-ref` / `<section class="footnotes">`），转换为 docx **原生页面底部脚注**（`FootnoteReferenceRun` + `Document.footnotes`，Word/WPS 自动编号、悬停可见）。回跳箭头 `footnote-backref` 自动剥离；文末定义容器不再作为正文渲染。无需配置，仅命中专用 class 才触发。
@@ -24,6 +28,8 @@
 
 ### Fixed
 
+- 异类型嵌套（`ul` 里的 `ol`、`ol` 里的 `ul`）此前从 level 0 重新起算，内层与外层缩进相同、看不出层次；现在 level 一律等于嵌套深度，缩进逐层递增。
+- 同一个 `<li>` 里出现多个子列表（如列表项内「子列表 → 说明段落 → 又一个子列表」）时，第二个及之后的子列表此前与第一个共用同一套编号，接着往下编（`b.`、`c.`）而不是重新从 `a.` 起；现在它们各自独立编号。
 - 嵌套列表之后的延续内容（list-continuation）中的图片与公式此前不被预加载 / 转换，渲染期图片静默丢失、公式退化为 `[math]` 占位；现已修复。
 - 脚注内容中的图片与公式同样因资源收集遗漏而丢失 / 退化；现已修复。
 - `<th>` 表头单元格文本现在默认加粗并居中（与浏览器渲染及表格模块注释宣称的行为一致），显式样式 / 对齐可覆盖；此前只有灰底没有加粗。

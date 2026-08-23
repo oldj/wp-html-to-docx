@@ -41,17 +41,206 @@ describe('buildIr - 列表', () => {
     expect(ctx.numbering).toHaveLength(1)
   })
 
-  it('嵌套异类型 ul → ol：创建新 reference，从 level 0 开始', () => {
+  it('嵌套异类型 ul → ol：创建新 reference，但 level 仍按嵌套深度递增', () => {
+    // 深度按任意列表祖先计数：ul 里的 ol 是第二层，缩进要比外层多一级；
+    // 此前异类型嵌套从 level 0 重新起算，内层与外层缩进相同、看不出层次
     const { ir, ctx } = build('<ul><li>a<ol><li>b</li></ol></li></ul>')
     expect(ir).toHaveLength(2)
     if (ir[0]?.kind !== 'list-item' || ir[1]?.kind !== 'list-item') {
       throw new Error('expected list-item')
     }
     expect(ir[0].ref.reference).not.toBe(ir[1].ref.reference)
-    expect(ir[1].ref.level).toBe(0)
+    expect(ir[0].ref.level).toBe(0)
+    expect(ir[1].ref.level).toBe(1)
     expect(ctx.numbering).toHaveLength(2)
     expect(ctx.numbering[0]?.levels[0]?.format).toBe('bullet')
-    expect(ctx.numbering[1]?.levels[0]?.format).toBe('decimal')
+    // 新 reference 的第二层是有序列表的二级默认形态（a.），不是 decimal
+    expect(ctx.numbering[1]?.levels[1]?.format).toBe('lowerLetter')
+  })
+
+  it('默认层级方案：ol 三级一循环 1. a. i.，ul 循环 • ◦ ▪', () => {
+    const { ctx } = build('<ol><li>a</li></ol><ul><li>b</li></ul>')
+    const ol = ctx.numbering[0]?.levels ?? []
+    const ul = ctx.numbering[1]?.levels ?? []
+    expect(ol.map((l) => l.format)).toEqual([
+      'decimal',
+      'lowerLetter',
+      'lowerRoman',
+      'decimal',
+      'lowerLetter',
+      'lowerRoman',
+      'decimal',
+      'lowerLetter',
+    ])
+    expect(ol.map((l) => l.text)).toEqual(['%1.', '%2.', '%3.', '%4.', '%5.', '%6.', '%7.', '%8.'])
+    expect(ul.map((l) => l.text)).toEqual(['•', '◦', '▪', '•', '◦', '▪', '•', '◦'])
+    expect(ul.every((l) => l.format === 'bullet')).toBe(true)
+  })
+
+  it('data-list-style 指定格式：该列表拥有专属 reference，仅自身层级用指定格式', () => {
+    const { ir, ctx } = build(
+      '<ol data-list-style="upper-roman" style="list-style-type: upper-roman"><li>a<ol><li>b</li></ol></li></ol>',
+    )
+    if (ir[0]?.kind !== 'list-item' || ir[1]?.kind !== 'list-item') {
+      throw new Error('expected list-item')
+    }
+    // 内层没有自己的格式 → 复用外层 reference，落在第二层
+    expect(ir[1].ref.reference).toBe(ir[0].ref.reference)
+    expect(ir[1].ref.level).toBe(1)
+    expect(ctx.numbering).toHaveLength(1)
+    const levels = ctx.numbering[0]?.levels ?? []
+    expect(levels[0]?.format).toBe('upperRoman')
+    // 外层的指定格式不下渗：第二层仍是层级默认的 a.
+    expect(levels[1]?.format).toBe('lowerLetter')
+  })
+
+  it('嵌套列表自己指定了格式：注册专属 reference，覆盖的是它所在的层', () => {
+    const { ir, ctx } = build(
+      '<ol><li>a<ol data-list-style="decimal"><li>b</li></ol></li><li>c</li></ol>',
+    )
+    if (ir[0]?.kind !== 'list-item' || ir[1]?.kind !== 'list-item' || ir[2]?.kind !== 'list-item') {
+      throw new Error('expected list-item')
+    }
+    expect(ir[1].ref.reference).not.toBe(ir[0].ref.reference)
+    expect(ir[1].ref.level).toBe(1)
+    // 外层第二项仍回到外层 reference
+    expect(ir[2].ref.reference).toBe(ir[0].ref.reference)
+    expect(ctx.numbering).toHaveLength(2)
+    const inner = ctx.numbering[1]?.levels ?? []
+    expect(inner[1]?.format).toBe('decimal')
+    expect(inner[0]?.format).toBe('decimal')
+  })
+
+  it('格式来源优先级：data-list-style > style 的 list-style-type > type 属性', () => {
+    const pick = (html: string): string | undefined =>
+      build(html).ctx.numbering[0]?.levels[0]?.format
+    expect(
+      pick(
+        '<ol data-list-style="lower-roman" style="list-style-type: upper-alpha" type="1"><li>a</li></ol>',
+      ),
+    ).toBe('lowerRoman')
+    expect(pick('<ol style="list-style-type: upper-alpha" type="1"><li>a</li></ol>')).toBe(
+      'upperLetter',
+    )
+    expect(pick('<ol type="I"><li>a</li></ol>')).toBe('upperRoman')
+    expect(pick('<ol type="i"><li>a</li></ol>')).toBe('lowerRoman')
+    expect(pick('<ol type="a"><li>a</li></ol>')).toBe('lowerLetter')
+  })
+
+  it('中文数字与 none：映射到对应的 OOXML 格式，顿号作后缀', () => {
+    const levels = (html: string) => build(html).ctx.numbering[0]?.levels ?? []
+    const cjk = levels('<ol data-list-style="cjk-decimal"><li>a</li></ol>')
+    expect(cjk[0]).toMatchObject({ format: 'ideographDigital', text: '%1、' })
+    const simp = levels('<ol data-list-style="simp-chinese-informal"><li>a</li></ol>')
+    expect(simp[0]).toMatchObject({ format: 'chineseCounting', text: '%1、' })
+    const trad = levels('<ol data-list-style="trad-chinese-informal"><li>a</li></ol>')
+    expect(trad[0]).toMatchObject({ format: 'taiwaneseCounting', text: '%1、' })
+    const none = levels('<ul data-list-style="none"><li>a</li></ul>')
+    expect(none[0]).toMatchObject({ format: 'none', text: '' })
+  })
+
+  it('ul 的项目符号可指定；ul 上写编号格式、ol 上写项目符号一律忽略', () => {
+    const { ctx } = build(
+      '<ul data-list-style="square"><li>a</li></ul>' +
+        '<ul data-list-style="decimal"><li>b</li></ul>' +
+        '<ol data-list-style="circle"><li>c</li></ol>' +
+        '<ol style="list-style-type: url(x)"><li>d</li></ol>',
+    )
+    expect(ctx.numbering[0]?.levels[0]).toMatchObject({ format: 'bullet', text: '▪' })
+    expect(ctx.numbering[1]?.levels[0]).toMatchObject({ format: 'bullet', text: '•' })
+    expect(ctx.numbering[2]?.levels[0]?.format).toBe('decimal')
+    expect(ctx.numbering[3]?.levels[0]?.format).toBe('decimal')
+  })
+
+  it('options.listLevels：全局层级方案按深度循环，元素自身指定的格式仍优先', () => {
+    const nodes = parseHtmlBodyChildren(
+      '<ol><li>a<ol><li>b<ol><li>c<ol><li>d</li></ol></li></ol></li></ol></li></ol>' +
+        '<ul><li>x</li></ul>' +
+        '<ol data-list-style="lower-roman"><li>y</li></ol>',
+    )
+    const ctx = new BuildContext({
+      listLevels: {
+        ordered: ['simp-chinese-informal', 'decimal'],
+        bullet: ['square'],
+      },
+    })
+    buildIr(nodes, ctx)
+    const ol = ctx.numbering[0]?.levels ?? []
+    // 两项方案按深度循环：一、/ 1. / 一、/ 1. …
+    expect(ol.slice(0, 4).map((l) => l.format)).toEqual([
+      'chineseCounting',
+      'decimal',
+      'chineseCounting',
+      'decimal',
+    ])
+    expect(ol[0]?.text).toBe('%1、')
+    const ul = ctx.numbering[1]?.levels ?? []
+    expect(ul.every((l) => l.text === '▪')).toBe(true)
+    // 元素自己指定的格式压过全局方案
+    expect(ctx.numbering[2]?.levels[0]?.format).toBe('lowerRoman')
+    // 但它的其余层仍走全局方案
+    expect(ctx.numbering[2]?.levels[1]?.format).toBe('decimal')
+  })
+
+  it('options.listLevels：非法项跳过并 warn，整组非法时回退默认方案', () => {
+    const warnings: string[] = []
+    const nodes = parseHtmlBodyChildren('<ol><li>a</li></ol><ul><li>b</li></ul>')
+    const ctx = new BuildContext({
+      listLevels: { ordered: ['upper-alpha', 'nope', 'circle'], bullet: ['decimal'] },
+      logger: (level, msg) => {
+        if (level === 'warn') warnings.push(msg)
+      },
+    })
+    buildIr(nodes, ctx)
+    // ordered：只剩 upper-alpha 一项 → 各层全是 upperLetter；'circle' 是项目符号，对 ol 不合法
+    const ol = ctx.numbering[0]?.levels ?? []
+    expect(ol.every((l) => l.format === 'upperLetter')).toBe(true)
+    // bullet 整组非法 → 回退 • ◦ ▪
+    const ul = ctx.numbering[1]?.levels ?? []
+    expect(ul.slice(0, 3).map((l) => l.text)).toEqual(['•', '◦', '▪'])
+    expect(warnings).toHaveLength(3)
+    expect(warnings.some((w) => w.includes('listLevels.ordered') && w.includes('"nope"'))).toBe(
+      true,
+    )
+    expect(warnings.some((w) => w.includes('listLevels.bullet') && w.includes('"decimal"'))).toBe(
+      true,
+    )
+  })
+
+  it('ol 的 start 属性：起始序号写进专属 reference 的对应层', () => {
+    const { ctx } = build('<ol start="5"><li>a<ol><li>b</li></ol></li></ol>')
+    expect(ctx.numbering).toHaveLength(1)
+    const levels = ctx.numbering[0]?.levels ?? []
+    expect(levels[0]?.start).toBe(5)
+    // 内层没指定，仍从 1 起
+    expect(levels[1]?.start).toBe(1)
+  })
+
+  it('start="1" 或非法 start 不算指定：不额外注册 reference，嵌套列表照常复用父 reference', () => {
+    const one = build('<ol><li>a<ol start="1"><li>b</li></ol></li></ol>')
+    expect(one.ctx.numbering).toHaveLength(1)
+    const bad = build('<ol><li>a<ol start="x"><li>b</li></ol></li></ol>')
+    expect(bad.ctx.numbering).toHaveLength(1)
+  })
+
+  it('同一个 li 内的相邻子列表各自独立编号：第二个另起 reference', () => {
+    // 中间没有父项编号递增，Word 不会重启下层计数；若两个子列表共用同一个 (numId, ilvl)，
+    // 第二个会接着编成 b.，而不是重新从 a. 起。第二个必须另起 reference。
+    const { ir, ctx } = build('<ol><li>a<ol><li>b</li></ol><ol><li>c</li></ol></li></ol>')
+    expect(ctx.numbering).toHaveLength(2)
+    const items = ir.filter((b) => b.kind === 'list-item')
+    expect(items).toHaveLength(3)
+    const refs = items.map((b) => (b.kind === 'list-item' ? b.ref : undefined))
+    expect(refs.map((r) => r?.level)).toEqual([0, 1, 1])
+    expect(refs[1]?.reference).toBe(refs[0]?.reference)
+    expect(refs[2]?.reference).not.toBe(refs[1]?.reference)
+  })
+
+  it('下一个 li 的首个子列表仍复用父 reference（父项编号递增会重启下层计数）', () => {
+    const { ir, ctx } = build('<ol><li>a<ol><li>x</li></ol></li><li>b<ol><li>y</li></ol></li></ol>')
+    expect(ctx.numbering).toHaveLength(1)
+    const refs = ir.map((b) => (b.kind === 'list-item' ? b.ref.reference : null))
+    expect(new Set(refs).size).toBe(1)
   })
 
   it('li 内含内联格式：保留样式', () => {
