@@ -14,6 +14,7 @@ import { collectInlines, inlineStyleFromElement, isInlineTag } from './inlineCol
 import type { BuildContext } from './buildContext.js'
 import { isWhitespaceOnly } from '../utils/html.js'
 import { parseInlineStyle, parsePageBreaks, parseTextAlign, parseWidthValue } from '../utils/css.js'
+import { resolveListStyle, type ListSpec } from '../builder/numbering.js'
 import { serializeNode } from '../utils/serializeNode.js'
 
 const HEADING_LEVELS: Record<string, 1 | 2 | 3 | 4 | 5 | 6> = {
@@ -30,6 +31,12 @@ type ListFrame = {
   ordered: boolean
   reference: string
   level: number
+  /**
+   * 当前 <li> 内是否已经有子列表复用过本 reference（每进入一个新 <li> 复位）。
+   * Word 只在上层编号递增时重启下层计数，所以同一个 <li> 里的第二个子列表若继续复用
+   * 同一个 (numId, ilvl)，会接着前一个往下编号（第二个从 b. 而不是 a. 开始）。
+   */
+  childListReused: boolean
 }
 
 /**
@@ -306,9 +313,44 @@ function pageBreakSides(el: ParsedElement): { before: boolean; after: boolean } 
 }
 
 /**
+ * 读取列表元素自己指定的编号规格。
+ * 格式来源按优先级：data-list-style（WonderPen 的规范存法）> style 的 list-style-type > type 属性；
+ * 起始序号来自 ol 的 start。都没有时返回 undefined。
+ *
+ * start 非法或等于 1 一律视为未指定：1 本就是各层的默认起点，写不写进 numbering 定义结果一样，
+ * 折叠掉可以少注册一个 reference。列表之间是否各自重新计数由 walkList 的 reference 归属决定，
+ * 与这里是否折叠 start 无关。
+ */
+function listSpecFromElement(
+  node: ParsedElement,
+  ordered: boolean,
+  level: number,
+): ListSpec | undefined {
+  const style = resolveListStyle(
+    ordered,
+    [getAttr(node, 'data-list-style'), parseInlineStyle(getAttr(node, 'style'))['list-style-type']],
+    getAttr(node, 'type'),
+  )
+  let start: number | undefined
+  if (ordered) {
+    const raw = getAttr(node, 'start')
+    const n = raw === undefined ? NaN : parseInt(raw, 10)
+    if (Number.isFinite(n) && n !== 1) start = n
+  }
+  if (style === undefined && start === undefined) return undefined
+  return { level, style, start }
+}
+
+/**
  * 走查一个 ul / ol。
- * - 若上层栈顶同类型 list，复用 reference，level + 1
- * - 否则注册新 reference，level = 0
+ * - level 一律等于嵌套深度（按任意列表祖先计数，ol 里的 ul 也算一层），保证缩进逐层递增、
+ *   默认形态按深度循环——与浏览器 / WonderPen 各渲染场景的 CSS 一致
+ * - 元素自己指定了格式或起始序号 → 注册专属 reference（仅 level 这一层用指定值）
+ * - 否则若上层栈顶同类型 list、且本 <li> 内还没有子列表复用过它 → 复用其 reference，
+ *   整棵嵌套结构在 Word 里是一个多级列表；父项编号递增时 Word 自动重启下层计数，
+ *   与 HTML 嵌套列表从 1 起的语义一致
+ * - 否则注册默认 reference。同一个 <li> 里的第二个子列表必须走这条路：中间没有父项编号递增，
+ *   继续复用会落在同一 (numId, ilvl) 上被接着编号（第二个从 b. 起）
  * - 嵌套 list 在 IR 层平铺：先输出当前 li 的 list-item，再追加嵌套 list 的扁平结果
  */
 function walkList(
@@ -319,12 +361,18 @@ function walkList(
   baseStyle: InlineStyle = {},
 ): Block[] {
   const top = listStack[listStack.length - 1]
-  let frame: ListFrame
-  if (top !== undefined && top.ordered === ordered) {
-    frame = { ordered, reference: top.reference, level: Math.min(top.level + 1, 7) }
+  const level = Math.min(listStack.length, 7)
+  const spec = listSpecFromElement(node, ordered, level)
+  let reference: string
+  if (spec !== undefined) {
+    reference = ctx.registerList(ordered, spec)
+  } else if (top !== undefined && top.ordered === ordered && !top.childListReused) {
+    reference = top.reference
+    top.childListReused = true
   } else {
-    frame = { ordered, reference: ctx.registerList(ordered), level: 0 }
+    reference = ctx.registerList(ordered)
   }
+  const frame: ListFrame = { ordered, reference, level, childListReused: false }
 
   const out: Block[] = []
   const newStack = [...listStack, frame]
@@ -332,6 +380,9 @@ function walkList(
     if (!isElement(child)) continue
     const tag = child.tagName
     if (tag !== 'li') continue
+    // 新的一项开始：walkListItem 一定会先产出本层的 list-item（ensureFirstEmitted 兜底），
+    // Word 见到本层编号递增就会重启下层计数，于是这一项里的首个子列表可以重新复用本 reference
+    frame.childListReused = false
     out.push(...walkListItem(child, frame, ctx, newStack, baseStyle))
   }
   return out

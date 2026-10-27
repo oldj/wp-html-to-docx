@@ -81,6 +81,14 @@ export type Logger = (
   ...args: unknown[]
 ) => void
 
+/** 列表层级默认方案，见 HtmlToDocxOptions.listLevels */
+export type ListLevelsOptions = {
+  /** 无序列表各层的项目符号：'disc' | 'circle' | 'square' | 'none' */
+  bullet?: readonly string[]
+  /** 有序列表各层的编号格式：'decimal' | 'lower-alpha' | 'upper-roman' | 'cjk-decimal' … */
+  ordered?: readonly string[]
+}
+
 export type HtmlToDocxOptions = {
   page?: PageOptions
   header?: HeaderFooterValue
@@ -145,10 +153,23 @@ export type HtmlToDocxOptions = {
   preserveWhitespace?: boolean
 
   /**
+   * 列表层级默认方案：按嵌套深度循环使用的 CSS list-style-type 关键字，第 n 层取第 n % length 项。
+   * 不传时为 Word / Google Docs 的默认：bullet ['disc', 'circle', 'square']、
+   * ordered ['decimal', 'lower-alpha', 'lower-roman']。
+   * 元素自身指定的格式（data-list-style / style 的 list-style-type / type 属性）优先于此方案。
+   * 不认识的关键字（或与列表类型不匹配，如 bullet 里写 'decimal'）会被跳过并 warn；
+   * 整组都不合法时回退默认方案。
+   */
+  listLevels?: ListLevelsOptions
+
+  /**
    * 可选日志钩子。提供后，库在执行入口会调用一次：
    *   logger('info', `wp-html-to-docx vX.Y.Z`)
-   * 用于在调用方排查实际装载的版本（例如怀疑包管理器命中了缓存中的旧版时）。
-   * 不提供则完全静默，不会向 console 写任何内容。
+   * 用于在调用方排查实际装载的版本（例如怀疑包管理器命中了缓存中的旧版时）。不提供则不打印这行。
+   *
+   * 另外，库内的非致命警告（未知纸张名、非法 listLevels、公式转换失败等）提供后统一改走
+   * logger('warn', ...)，便于宿主集中采集；不提供时仍会退回 console.warn。
+   * 只有「静默跳过」本身就是文档化语义的场景（如 onUnresolvedImage: 'skip' 的图片）才完全不出声。
    */
   logger?: Logger
 }

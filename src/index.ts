@@ -29,6 +29,7 @@ export type {
   ImageResolver,
   ImageResolverResult,
   LengthUnit,
+  ListLevelsOptions,
   TableCellMargin,
 } from './options.js'
 

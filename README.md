@@ -141,12 +141,21 @@ await htmlToDocx(html, {
   // 当前不解析 td/th 上的 CSS padding。
   tableCellMargin: { top: 2, right: 5, bottom: 2, left: 5, unit: 'pt' },
 
+  // 列表层级默认方案（按嵌套深度循环的 list-style-type 关键字），不传为 Word 默认的
+  // 1. a. i. 与 • ◦ ▪；详见「列表编号」一节
+  listLevels: {
+    ordered: ['decimal', 'lower-alpha', 'lower-roman'],
+    bullet: ['disc', 'circle', 'square'],
+  },
+
   // 是否保留文本中的连续空格（含全角空格 U+3000、NBSP 等）
   // 含换行/Tab 的空白序列仍会折叠为单空格，避免格式化 HTML 源里的缩进/换行被当成内容
   preserveWhitespace: false,
 
   // 可选日志钩子。提供后，库在执行入口会以 'info' 级别打印一行版本号，
-  // 便于排查"是不是装到了旧版"。不提供则完全静默。
+  // 便于排查"是不是装到了旧版"；不提供则不打印这行。
+  // 库内的非致命警告（未知纸张名、非法 listLevels、公式转换失败等）提供后统一走 logger('warn')，
+  // 不提供时退回 console.warn。
   logger: (level, message, ...args) => {
     // level: 'debug' | 'info' | 'warn' | 'error'
     console[level === 'debug' ? 'log' : level](message, ...args)
@@ -217,7 +226,7 @@ await htmlToDocx(html, {
 
 ## 支持的 HTML 标签
 
-**块级**：`p`、`h1-h6`、`ul`、`ol`、`li`（含多级嵌套，自动切换 numbering）、`blockquote`、`hr`、`pre`、`code`
+**块级**：`p`、`h1-h6`、`ul`、`ol`、`li`（含多级嵌套，见 [列表编号](#列表编号)）、`blockquote`、`hr`、`pre`、`code`
 
 **表格**：`table`、`thead`、`tbody`、`tfoot`、`tr`、`th`、`td`、`colgroup`、`col`（含 `colspan` / `rowspan` 与列宽，见 [表格列宽](#表格列宽)；`thead` 行自动加粗 + 浅灰背景）
 
@@ -237,6 +246,54 @@ await htmlToDocx(html, {
   - `<pre>` / `<hr>`：每个段落带相同的 `w:left` 缩进
   - `<blockquote>`：自带 720 缩进与外层 list 缩进**叠加**（嵌套缩进语义自洽，level 0 下最终为 1440）
   - 缩进值由 list 层级决定（每层 720 twip），等同 list-item 的文本起点位置，与浏览器渲染 `<li><table>` 的直觉一致
+
+## 列表编号
+
+嵌套层级的项目符号 / 编号按深度三级一循环，与 Word、Google Docs 的默认一致：
+
+| 深度 | `ul` | `ol` |
+| ---- | ---- | ---- |
+| 1    | •    | 1.   |
+| 2    | ◦    | a.   |
+| 3    | ▪    | i.   |
+| 4…   | 循环 | 循环 |
+
+深度按任意列表祖先计数（`ol` 里的 `ul` 是第二层，缩进同样递增）。每个顶层列表独立编号；嵌套列表在父项切换后自动从 1 重新计数（Word 的层级重启语义）。
+
+单个列表可以指定自己的格式与起始序号，来源按优先级：
+
+1. `data-list-style="…"`（WonderPen 的规范存法）
+2. `style="list-style-type: …"`
+3. HTML 遗留属性 `type="1|a|A|i|I"`（`ol`）/ `type="disc|circle|square"`（`ul`）
+
+```html
+<ol start="3" data-list-style="upper-roman">
+  <li>III.</li>
+  <li>
+    IV.
+    <ol>
+      <li>a. —— 内层没指定，仍按层级默认</li>
+    </ol>
+  </li>
+</ol>
+```
+
+`ol` 接受：`decimal`、`decimal-leading-zero`、`lower-alpha` / `lower-latin`、`upper-alpha` / `upper-latin`、`lower-roman`、`upper-roman`、`cjk-decimal`（一、二 … 一〇）、`simp-chinese-informal`（一、二 … 十、十一）、`trad-chinese-informal`、`none`；`ul` 接受：`disc`、`circle`、`square`、`none`。类型不匹配（`ul` 上写编号格式）或不认识的值一律忽略、退回默认方案。中文数字的编号后缀用顿号（`一、`）。
+
+指定格式只作用于该列表自身所在的层；嵌套在它里面、没有自己指定格式的列表仍按层级默认方案（与 CSS 语义一致）。
+
+层级默认方案可以整体替换（`listLevels`），按深度循环取值，关键字范围与上面相同：
+
+```typescript
+await htmlToDocx(html, {
+  listLevels: {
+    ordered: ['simp-chinese-informal', 'decimal', 'lower-alpha'], // 一、 → 1. → a. → 一、 …
+    bullet: ['square', 'circle'], // ▪ → ◦ → ▪ …
+  },
+})
+```
+
+不认识或与列表类型不匹配的关键字会被跳过并通过 `logger` 发 `warn`；整组都不合法时回退默认方案。元素自身指定的格式仍优先于 `listLevels`。
 
 ## 表格列宽
 
