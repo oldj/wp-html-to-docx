@@ -15,12 +15,14 @@ import {
   type FileChild,
   type ITableCellOptions,
   type ITableOptions,
+  type ITableWidthProperties,
 } from 'docx'
 import type { Block, TableCell as IRCell, TableRow as IRRow } from '../types.js'
 import type { BuildContext } from '../ir/buildContext.js'
 import { blocksToChildren } from './blocks.js'
 import { DEFAULT_OPTIONS } from '../options.js'
 import { pageContentWidthTwip, toTwip } from '../utils/units.js'
+import { silentWarn } from '../utils/log.js'
 
 const HEADER_SHADING = 'EFEFEF'
 /** HTML <table cellpadding="N"> 中 N 是像素，转 dxa：1px = 15 twip（基于 96dpi 标准换算） */
@@ -71,29 +73,55 @@ export type TableLayout = {
 const MIN_GRID_COL_TWIP = 1
 
 export function buildTable(rows: IRRow[], ctx: BuildContext, layout: TableLayout = {}): Table {
-  const { indent, cellPaddingPx, columnWidths, widthPct } = layout
-  const indented = indent !== undefined && indent > 0
+  const { cellPaddingPx, columnWidths, widthPct } = layout
+  const indent = layout.indent !== undefined && layout.indent > 0 ? layout.indent : 0
   const margins = resolveCellMargins(ctx, cellPaddingPx)
   const builtRows = rows.map((row) => buildRow(row, ctx))
-  const grid = resolveGrid(ctx, columnWidths, widthPct, indented ? indent : 0)
-
-  // 默认 100% 占满文本列；被嵌入 list 时切到 auto 由内容自适应宽度，
-  // 否则 tblInd + 100% 宽会让表格右溢出页面右边距。
-  // 有显式网格时缩进表格同样走 auto —— 此时宽度已由 gridCol 的绝对值定死，不需要百分比。
-  const width = indented
-    ? { size: 0, type: WidthType.AUTO }
-    : { size: widthPct ?? 100, type: WidthType.PERCENTAGE }
+  const grid =
+    columnWidths !== undefined && columnWidths.length > 0
+      ? resolveGrid(columnWidths, tableWidthTwip(ctx, widthPct, indent))
+      : undefined
+  const width = resolveTableWidth(ctx, widthPct, indent, grid !== undefined)
 
   const opts: ITableOptions = {
     rows: builtRows,
     width,
-    ...(indented ? { indent: { size: indent, type: WidthType.DXA } } : {}),
+    ...(indent > 0 ? { indent: { size: indent, type: WidthType.DXA } } : {}),
     margins: { ...margins, marginUnitType: WidthType.DXA },
     // 只有拿到显式列宽才下发网格并锁死布局：autofit 会按内容重算列宽，
     // 会把好不容易保留下来的比例冲掉；没有列宽时保持 autofit（等分 + 内容自适应）。
     ...(grid !== undefined ? { columnWidths: grid, layout: TableLayoutType.FIXED } : {}),
   }
   return new Table(opts)
+}
+
+/** 表格实际宽度（twip）：版心扣掉列表缩进后，再乘表宽百分比（缺省 100%） */
+function tableWidthTwip(ctx: BuildContext, widthPct: number | undefined, indent: number): number {
+  // 纸张名非法的警告由 buildSection 统一发出一次，逐表重算时静默
+  const available = Math.max(1, pageContentWidthTwip(ctx.options, silentWarn) - indent)
+  return Math.max(1, Math.round((available * (widthPct ?? 100)) / 100))
+}
+
+/**
+ * 表宽（`tblW`）：
+ * - 未缩进：百分比，默认 100% 占满文本列。
+ * - 列表内的缩进表格：`tblInd` + 100% 会右溢出，改写绝对宽度「(版心 − 缩进) × 百分比」。
+ *   不能留 auto —— docx 会按整个版心推导 `tblGrid`，Word 按内容自适应看不出问题，
+ *   但 Google Docs / Pages / LibreOffice 以网格为准，表格会溢出右边距一个缩进量。
+ *   写成 dxa 后 docx 按这个宽度等分网格，且不写 `tcW`，Word 仍可在该宽度内自适应列宽。
+ * - 已有显式网格时用 auto：宽度已由 gridCol 的绝对值定死。
+ * - 处在表格单元格内时用 auto：可用宽度是父单元格而非版心，按版心算的绝对值反而会撑破单元格，
+ *   交给 docx 按父单元格推导网格。
+ */
+function resolveTableWidth(
+  ctx: BuildContext,
+  widthPct: number | undefined,
+  indent: number,
+  hasGrid: boolean,
+): ITableWidthProperties {
+  if (indent === 0) return { size: widthPct ?? 100, type: WidthType.PERCENTAGE }
+  if (hasGrid || ctx.cellDepth > 0) return { size: 0, type: WidthType.AUTO }
+  return { size: tableWidthTwip(ctx, widthPct, indent), type: WidthType.DXA }
 }
 
 /**
@@ -106,17 +134,10 @@ export function buildTable(rows: IRRow[], ctx: BuildContext, layout: TableLayout
  *
  * 绝对值取「版心宽度 × 表宽百分比」，与 `tblW pct` 相互印证：即便某些渲染器不按百分比缩放
  * 网格，这份绝对值本身也已经是正确的排版结果。
+ *
+ * @param tableTwip 表格实际宽度（twip），见 tableWidthTwip
  */
-function resolveGrid(
-  ctx: BuildContext,
-  columnWidths: number[] | undefined,
-  widthPct: number | undefined,
-  indent: number,
-): number[] | undefined {
-  if (columnWidths === undefined || columnWidths.length === 0) return undefined
-  const available = Math.max(1, pageContentWidthTwip(ctx.options) - indent)
-  const tableTwip = Math.max(1, Math.round((available * (widthPct ?? 100)) / 100))
-
+function resolveGrid(columnWidths: number[], tableTwip: number): number[] {
   // 逐列取整并让最后一列吃掉累计误差，保证 gridCol 之和精确等于表宽（差几 twip 会让 Word 重算）
   const out: number[] = []
   let used = 0
@@ -138,7 +159,14 @@ function buildRow(row: IRRow, ctx: BuildContext): TableRow {
 }
 
 function buildCell(cell: IRCell, isHeader: boolean, ctx: BuildContext): TableCell {
-  const innerChildren = blocksToChildren(cell.children, ctx)
+  // 记录单元格嵌套深度，供其内列表缩进表格判断可用宽度是否还是版心（见 resolveTableWidth）
+  ctx.cellDepth += 1
+  let innerChildren: FileChild[]
+  try {
+    innerChildren = blocksToChildren(cell.children, ctx)
+  } finally {
+    ctx.cellDepth -= 1
+  }
   const children = ensureCellChildren(innerChildren)
   const opts: ITableCellOptions = {
     children,

@@ -11,6 +11,12 @@ import type { Logger } from '../options.js'
 export type WarnFn = (message: string, ...args: unknown[]) => void
 
 /**
+ * 静默 warn：用于同一问题已在别处告警过、此处重复解析不应再出声的场景
+ * （如版心宽度在 builder 中逐段 / 逐表重算，纸张名非法的警告只由 buildSection 发一次）。
+ */
+export const silentWarn: WarnFn = () => {}
+
+/**
  * 构造 warn 函数。
  * @param logger 用户提供的日志钩子；其自身抛错会被吞掉，不阻断构建主流程
  * @param fallbackToConsole 无 logger 时是否退回 console.warn（默认 true）

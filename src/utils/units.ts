@@ -95,19 +95,25 @@ export function safeNonNegativeInt(value: unknown, fallback: number): number {
  * 页面正文可用宽度（CSS 像素）= 页宽 − 左右页边距。
  * 用于把图片的百分比宽度（如 "100%"）换算成像素，并对超宽图片做 clamp。
  * 与 buildSection 的尺寸/边距解析保持一致：始终用 portrait 尺寸 + orientation 决定实际页宽。
+ * @param warn 见 pageContentWidthTwip
  */
-export function pageContentWidthPx(options: HtmlToDocxOptions): number {
-  return (pageContentWidthTwip(options) / TWIP_PER_INCH) * PX_PER_INCH
+export function pageContentWidthPx(options: HtmlToDocxOptions, warn?: WarnFn): number {
+  return (pageContentWidthTwip(options, warn) / TWIP_PER_INCH) * PX_PER_INCH
 }
 
 /**
  * 页面正文可用宽度（twip）= 页宽 − 左右页边距。
  * 表格网格（`tblGrid` 的 `gridCol`）以 twip 计，故与 pageContentWidthPx 共用同一套解析。
+ * @param warn 纸张名非法时的警告出口，缺省按 options.logger 构造。builder 内部调用应传 silentWarn：
+ *   该警告已由 buildSection 解析纸张时发出一次，逐段 / 逐表重复解析不应重复告警
  */
-export function pageContentWidthTwip(options: HtmlToDocxOptions): number {
+export function pageContentWidthTwip(
+  options: HtmlToDocxOptions,
+  warn: WarnFn = makeWarn(options.logger),
+): number {
   const page = options.page ?? {}
   const orientation = page.orientation ?? DEFAULT_OPTIONS.page.orientation
-  const dim = resolvePageSizeTwip(page.size ?? DEFAULT_OPTIONS.page.size, makeWarn(options.logger))
+  const dim = resolvePageSizeTwip(page.size ?? DEFAULT_OPTIONS.page.size, warn)
   // resolvePageSizeTwip 始终返回 portrait 宽高；横向时实际页宽取其 height
   const pageWidthTwip = orientation === 'landscape' ? dim.height : dim.width
   const m = { ...DEFAULT_OPTIONS.page.margin, ...(page.margin ?? {}) }

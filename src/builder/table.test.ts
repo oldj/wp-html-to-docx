@@ -157,6 +157,59 @@ describe('builder XML - 表格列宽（colgroup → tblGrid）', () => {
     expect(cols[1]! / cols[0]!).toBeCloseTo(3, 2)
     expect(getTblW(xml)).toEqual({ type: 'auto', w: '0' })
   })
+
+  it('list 内无 colgroup 的缩进表格：tblW 与网格合计都是「版心 − 缩进」，不按整版心推网格', async () => {
+    // 防回归：docx 9.15 起 auto 宽表格按整个版心等分 gridCol，叠加 tblInd 后
+    // Google Docs / Pages / LibreOffice（以网格为准）里表格会溢出右边距一个缩进量
+    const xml = await getDocumentXml(
+      '<ul><li>x<table><tr><td>a</td><td>b</td></tr></table></li></ul>',
+    )
+    const indent = parseInt(/<w:tblInd\s+w:type="dxa"\s+w:w="(\d+)"/.exec(xml)![1]!, 10)
+    const expected = pageContentWidthTwip({}) - indent
+    expect(getTblW(xml)).toEqual({ type: 'dxa', w: String(expected) })
+    const cols = getGridCols(xml)
+    expect(cols).toHaveLength(2)
+    expect(cols.reduce((a, b) => a + b, 0)).toBeLessThanOrEqual(expected)
+    expect(cols.reduce((a, b) => a + b, 0)).toBeGreaterThan(expected - cols.length)
+    // 没有显式列宽：不写 tcW、不锁固定布局，Word 仍可在该宽度内按内容自适应
+    expect(xml).not.toContain('<w:tcW')
+    expect(xml).not.toContain('<w:tblLayout')
+  })
+
+  it('list 内缩进表格的百分比表宽按「版心 − 缩进」折算', async () => {
+    const xml = await getDocumentXml(
+      '<ul><li>x<table style="width: 50%"><tr><td>a</td><td>b</td></tr></table></li></ul>',
+    )
+    const indent = parseInt(/<w:tblInd\s+w:type="dxa"\s+w:w="(\d+)"/.exec(xml)![1]!, 10)
+    const expected = Math.round((pageContentWidthTwip({}) - indent) / 2)
+    expect(getTblW(xml)).toEqual({ type: 'dxa', w: String(expected) })
+  })
+
+  it('表格单元格内的列表缩进表格仍走 auto：可用宽度是父单元格而非版心', async () => {
+    const xml = await getDocumentXml(
+      '<table><tr><td><ul><li>x<table><tr><td>a</td><td>b</td></tr></table></li></ul></td></tr></table>',
+    )
+    const widths = [...xml.matchAll(/<w:tblW\s+w:type="([^"]*)"\s+w:w="([^"]*)"\s*\/>/g)].map(
+      (m) => ({ type: m[1], w: m[2] }),
+    )
+    // 外层表满宽 pct，内层缩进表 auto（不能用版心宽度撑破父单元格）
+    expect(widths).toEqual([
+      { type: 'pct', w: '5000' },
+      { type: 'auto', w: '0' },
+    ])
+  })
+
+  it('离开单元格后深度计数复位：表格之后的列表缩进表格仍按版心写 dxa 宽', async () => {
+    // 防回归：若 cellDepth 只增不减，表格之后所有列表内表格都会被误判为「在单元格内」退回 auto
+    const xml = await getDocumentXml(
+      '<table><tr><td>a</td></tr><tr><td>b</td></tr></table>' +
+        '<ul><li>x<table><tr><td>c</td></tr></table></li></ul>',
+    )
+    const widths = [...xml.matchAll(/<w:tblW\s+w:type="([^"]*)"\s+w:w="([^"]*)"\s*\/>/g)].map(
+      (m) => m[1],
+    )
+    expect(widths).toEqual(['pct', 'dxa'])
+  })
 })
 
 describe('builder XML - 表宽（table width）', () => {

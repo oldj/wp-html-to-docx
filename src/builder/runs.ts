@@ -12,6 +12,7 @@ import {
 import type { Inline, InlineStyle } from '../types.js'
 import type { BuildContext } from '../ir/buildContext.js'
 import { pageContentWidthPx } from '../utils/units.js'
+import { silentWarn } from '../utils/log.js'
 import { ommlToImported } from './ommlImport.js'
 import { resolveImageDisplaySize } from './imageLayout.js'
 
@@ -26,7 +27,8 @@ import { resolveImageDisplaySize } from './imageLayout.js'
 export function inlinesToRuns(inlines: Inline[], ctx: BuildContext): ParagraphChild[] {
   const out: ParagraphChild[] = []
   // 图片百分比宽度的换算基准、以及超宽图片的 clamp 上限：页面正文可用宽度（像素）
-  const contentWidthPx = pageContentWidthPx(ctx.options)
+  // 纸张名非法的警告由 buildSection 统一发出一次；这里逐段重算，静默以免每段都告警
+  const contentWidthPx = pageContentWidthPx(ctx.options, silentWarn)
   for (const item of inlines) {
     if (item.kind === 'break') {
       out.push(new TextRun({ break: 1 }))
@@ -116,6 +118,9 @@ function textRunFor(text: string, style: InlineStyle): ParagraphChild {
   // 不挂未注册的样式 ID，避免误导读者「这里有样式可挂」。
   const run = new TextRun({
     text,
+    // 链接文字挂 Word 内置的 Hyperlink 字符样式（蓝色 + 下划线，docx 默认样式表自带）；
+    // 不挂的话 <w:hyperlink> 能点但外观与正文无异。用户显式的 color 等属于直接格式，仍会覆盖样式
+    style: style.link ? 'Hyperlink' : undefined,
     bold: style.bold,
     italics: style.italic,
     underline: style.underline ? {} : undefined,

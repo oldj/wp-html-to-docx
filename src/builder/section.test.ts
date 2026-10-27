@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { unzipSync, strFromU8 } from 'fflate'
 import { htmlToDocx } from '../index.js'
 import type { HtmlToDocxOptions } from '../options.js'
+import { pageContentWidthTwip } from '../utils/units.js'
 
 async function unpack(html: string, opts: HtmlToDocxOptions = {}) {
   const u8 = await htmlToDocx(html, opts)
@@ -82,6 +83,23 @@ describe('section - 纸张尺寸与方向', () => {
     }
   })
 
+  it('未知 PaperSize 只告警一次：段落 / 表格 / 页眉页脚各自重算版心宽度时不重复告警', async () => {
+    // 防回归：此前图片尺寸换算逐段、表格宽度逐表重新解析纸张，同一个配置错误会告警 N 次
+    const logs: string[] = []
+    await unpack(
+      '<p>a</p><p>b</p><ul><li>x<table><tr><td>y</td></tr></table></li></ul>' +
+        '<table><colgroup><col width="1"><col width="2"></colgroup><tr><td>a</td><td>b</td></tr></table>',
+      {
+        page: { size: 'A6' as never },
+        footer: { left: 'L', right: 'R' },
+        logger: (level, message) => {
+          if (level === 'warn') logs.push(message)
+        },
+      },
+    )
+    expect(logs.filter((m) => m.includes('unknown PaperSize'))).toHaveLength(1)
+  })
+
   it('pageNumber 槽位与已有内容冲突的 warning 同样走 logger', async () => {
     const logs: string[] = []
     await unpack('<p>x</p>', {
@@ -155,6 +173,43 @@ describe('section - 页眉页脚', () => {
       footer: { center: 'ONLY' },
     })
     expect(footer1).toContain('ONLY')
+  })
+})
+
+describe('section - 页眉页脚三槽 tab stop 跟随版心宽度', () => {
+  const tabStops = (xml: string | undefined): { center?: number; right?: number } => {
+    const pos = (val: string): number | undefined => {
+      const m = new RegExp(`<w:tab w:val="${val}" w:pos="(\\d+)"`).exec(xml ?? '')
+      return m ? Number(m[1]) : undefined
+    }
+    return { center: pos('center'), right: pos('right') }
+  }
+
+  it('默认 A4：右槽落在版心右沿 9026', async () => {
+    const { footer1 } = await unpack('<p>x</p>', { footer: { left: 'L', right: 'R' } })
+    expect(tabStops(footer1)).toEqual({ center: 4513, right: 9026 })
+  })
+
+  it('A3 横向：tab stop 随版心变宽，不再停在 A4 的 9026', async () => {
+    const opts: HtmlToDocxOptions = {
+      page: { size: 'A3', orientation: 'landscape' },
+      footer: { left: 'L', center: 'C', right: 'R' },
+    }
+    const { footer1 } = await unpack('<p>x</p>', opts)
+    const width = pageContentWidthTwip(opts)
+    expect(width).toBeGreaterThan(20000)
+    expect(tabStops(footer1)).toEqual({ center: Math.round(width / 2), right: width })
+  })
+
+  it('自定义左右边距：页眉 tab stop 按收窄后的版心计算', async () => {
+    const opts: HtmlToDocxOptions = {
+      page: { margin: { left: 50, right: 30, unit: 'mm' } },
+      header: { center: 'C', right: 'R' },
+    }
+    const { header1 } = await unpack('<p>x</p>', opts)
+    const width = pageContentWidthTwip(opts)
+    expect(width).toBeLessThan(9026)
+    expect(tabStops(header1)).toEqual({ center: Math.round(width / 2), right: width })
   })
 })
 
