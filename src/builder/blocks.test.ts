@@ -115,14 +115,15 @@ describe('builder XML 断言 - 列表内软换行', () => {
     const tblIndMatch = xml.match(/<w:tblInd\s[^/>]*\/>/)?.[0] ?? ''
     expect(tblIndMatch).toContain('w:w="720"')
     expect(tblIndMatch).toContain('w:type="dxa"')
-    // 切到 auto 宽：不应再出现 100% pct
-    expect(xml).not.toMatch(/<w:tblW[^>]*w:w="100%"/)
+    // 切到 auto 宽：不应再出现 pct 宽
+    expect(xml).not.toMatch(/<w:tblW[^>]*w:type="pct"/)
     expect(xml).toMatch(/<w:tblW[^>]*w:type="auto"/)
   })
 
   it('顶层 <table>（不在 list 内）维持 100% pct 宽且无 tblInd', async () => {
     const xml = await getDocumentXml('<table><tr><td>x</td></tr></table>')
-    expect(xml).toMatch(/<w:tblW[^>]*w:type="pct"[^>]*w:w="100%"/)
+    // docx 9.15 起 pct 以五十分之一百分比写出：5000 = 100%
+    expect(xml).toMatch(/<w:tblW[^>]*w:type="pct"[^>]*w:w="5000"/)
     expect(xml).not.toMatch(/<w:tblInd/)
   })
 

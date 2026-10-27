@@ -82,11 +82,15 @@ describe('builder XML - 表格列宽（colgroup → tblGrid）', () => {
     expect(xml).toContain('<w:tblLayout w:type="fixed"/>')
   })
 
-  it('没有 colgroup 时维持原行为：不锁固定布局，gridCol 仍是占位等分', async () => {
+  it('没有 colgroup 时维持原行为：不锁固定布局，gridCol 仍是等分', async () => {
     const xml = await getDocumentXml('<table><tr><td>a</td><td>b</td></tr></table>')
     expect(xml).not.toContain('<w:tblLayout')
-    expect(getGridCols(xml)).toEqual([100, 100])
-    expect(getTblW(xml)).toEqual({ type: 'pct', w: '100%' })
+    // 无显式网格时由 docx 按版心宽度等分（9.15 起不再写 100 twip 占位）
+    const cols = getGridCols(xml)
+    expect(cols).toHaveLength(2)
+    expect(new Set(cols).size).toBe(1)
+    // docx 9.15 起 pct 以五十分之一百分比写出：5000 = 100%
+    expect(getTblW(xml)).toEqual({ type: 'pct', w: '5000' })
   })
 
   it('像素 colgroup 与等比例的百分比写法产出同一份 gridCol', async () => {
@@ -124,7 +128,9 @@ describe('builder XML - 表格列宽（colgroup → tblGrid）', () => {
     const xml = await getDocumentXml(
       '<table><colgroup><col style="width: 20%"><col style="width: 80%"></colgroup><tr><td>a</td><td>b</td><td>c</td></tr></table>',
     )
-    expect(getGridCols(xml)).toEqual([100, 100, 100])
+    const cols = getGridCols(xml)
+    expect(cols).toHaveLength(3)
+    expect(new Set(cols).size).toBe(1)
     expect(xml).not.toContain('<w:tblLayout')
   })
 
@@ -158,7 +164,7 @@ describe('builder XML - 表宽（table width）', () => {
     const xml = await getDocumentXml(
       '<table style="width: 50%"><colgroup><col style="width: 25%"><col style="width: 75%"></colgroup><tr><td>a</td><td>b</td></tr></table>',
     )
-    expect(getTblW(xml)).toEqual({ type: 'pct', w: '50%' })
+    expect(getTblW(xml)).toEqual({ type: 'pct', w: '2500' })
     const cols = getGridCols(xml)
     expect(cols.reduce((a, b) => a + b, 0)).toBe(Math.round(pageContentWidthTwip({}) / 2))
     expect(cols[1]! / cols[0]!).toBeCloseTo(3, 2)
@@ -168,6 +174,6 @@ describe('builder XML - 表宽（table width）', () => {
     const xml = await getDocumentXml(
       `<table>${COLGROUP_1_3_5}<tr><td>a</td><td>b</td><td>c</td></tr></table>`,
     )
-    expect(getTblW(xml)).toEqual({ type: 'pct', w: '100%' })
+    expect(getTblW(xml)).toEqual({ type: 'pct', w: '5000' })
   })
 })
