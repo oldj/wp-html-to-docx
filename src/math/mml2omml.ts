@@ -2,7 +2,8 @@
 //
 // 设计要点：
 // 1. mathml2omml 是 LGPL-3.0 的可选 peerDependency，运行时通过动态 import 加载。
-//    未安装时返回 null，调用方改走 TeX 兜底（math/latex.ts）或 [math] 文本占位，且只警告一次。
+//    未安装时返回 null，调用方退回文本占位，且只警告一次。带 TeX 源码的公式优先走 math/latex.ts，
+//    只有 TeX 转换失败时才轮到这里。
 // 2. parse5 重新序列化 <math> 时会丢失 xmlns（因为它把命名空间属性当普通 attr 跳过），
 //    转换前必须确保根元素含 xmlns="http://www.w3.org/1998/Math/MathML"，否则
 //    mathml2omml 不识别。
@@ -43,8 +44,8 @@ export function _resetForTest(): void {
  * 失败（依赖缺失 / 转换抛错）时返回 null，调用方负责退回占位。
  *
  * @param warn 警告出口；调用方传入经 makeWarn(logger) 构造的函数，缺省退 console.warn
- * @param options.warnIfMissing 依赖缺失时是否告警（默认 true）。带 TeX 源码的公式另有 latexToMath
- *   兜底，调用方据此关掉告警，免得只用 KaTeX 等的调用方被反复提示安装 LGPL 依赖
+ * @param options.warnIfMissing 依赖缺失时是否告警（默认 true）。带 TeX 源码的公式已由 latexToMath
+ *   处理过，调用方据此关掉告警，免得只用 KaTeX 的调用方被反复提示安装 LGPL 依赖
  */
 export async function mathmlToOmml(
   mathml: string,

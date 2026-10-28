@@ -421,16 +421,21 @@ class 列表中包含 `page-break` token 即触发（`<hr class="foo page-break 
 
 ### 启用方式
 
-公式按以下优先级转换，任一步失败都不会让整个转换失败：
+公式按是否带 TeX 源码（`<annotation encoding="application/x-tex">`，KaTeX 默认输出就有）走不同的转换顺序，任一步失败都会退到下一步，不会让整个转换失败：
 
-1. **MathML → OMML**：依赖第三方包 [`mathml2omml`](https://www.npmjs.com/package/mathml2omml)（**LGPL-3.0-or-later**），作为 **optional peerDependency** 提供，需要时手动安装：
+| 公式                                   | 第 1 步                        | 第 2 步                        | 都失败时                   |
+| -------------------------------------- | ------------------------------ | ------------------------------ | -------------------------- |
+| 带 TeX 源码（如 KaTeX）                | TeX → 公式（`latexToMath`）    | MathML → OMML（`mathml2omml`） | 文本 `$…$`（块级 `$$…$$`） |
+| 不带 TeX 源码（如 MathJax 3 默认输出） | MathML → OMML（`mathml2omml`） | —                              | 文本 `[math]`              |
 
-   ```bash
-   npm install mathml2omml
-   ```
+- **TeX → 公式**：用 docx 自带的 `docx/math`（MIT），无需额外安装。带 TeX 源码时优先走它，是因为 KaTeX 的 MathML 里 ∫ / ∑ 与其作用对象是平级兄弟，`mathml2omml` 会转出空的运算符主体（Word 中显示为虚线占位框），矩阵、分段函数的括号也不会随内容伸缩；从 TeX 转能还原这些结构。**只用 KaTeX 的场景无需安装任何额外依赖**，也不会被提示安装 `mathml2omml`。
+- **MathML → OMML**：依赖第三方包 [`mathml2omml`](https://www.npmjs.com/package/mathml2omml)（**LGPL-3.0-or-later**），作为 **optional peerDependency** 提供。不带 TeX 源码的公式（如 MathJax 3 的默认输出）需要它，手动安装：
 
-2. **TeX → 公式**：未安装 `mathml2omml`（或其转换失败）、且公式带 TeX 源码（`<annotation encoding="application/x-tex">`，KaTeX 默认输出就有）时，用 docx 自带的 `docx/math`（MIT，`latexToMath`）生成同样可编辑的 Word 公式。**只用 KaTeX 的场景无需安装任何额外依赖**，也不会被提示安装 `mathml2omml`。MathJax 3 的默认输出不带 TeX 源码，仍需安装 `mathml2omml`。
-3. **文本占位**：TeX 无法解析时输出 `$…$`（块级 `$$…$$`），读者能看懂，Microsoft 365 的公式编辑器也能以 LaTeX 格式把它转回正式公式；没有 TeX 源码时输出 `[math]`。
+  ```bash
+  npm install mathml2omml
+  ```
+
+- **文本占位**：`$…$` 让读者能看懂公式，Microsoft 365 的公式编辑器也能以 LaTeX 格式把它转回正式公式。
 
 告警：遇到没有 TeX 源码的公式而 `mathml2omml` 未安装时提示一次；TeX 无法解析时逐个告警。
 

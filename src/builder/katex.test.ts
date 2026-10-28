@@ -1,8 +1,8 @@
 // KaTeX 输出端到端：
 // - .katex-html 排版层被跳过，不再拍平成「E=mc2」这类乱字符
 // - <p> 里只有块级公式时升级为独占一段的 <m:oMathPara>
-// - 未装 mathml2omml 时，用 <annotation encoding="application/x-tex"> 的 TeX 源码经 docx/math 的
-//   latexToMath 生成正式公式；TeX 解析失败 / docx/math 加载失败时退回 $…$ 文本，无 annotation 才退回 [math]
+// - 带 <annotation encoding="application/x-tex"> 的公式优先经 docx/math 的 latexToMath 转换（无论是否装了
+//   mathml2omml）；TeX 解析失败 / docx/math 加载失败时退回 mathml2omml，再不行退回 $…$ 文本；无 annotation 才退回 [math]
 //
 // 夹具为 KaTeX 0.19.1 renderToString 的真实输出（默认 htmlAndMathml），非 ASCII 字符（∫、零宽空格）以转义写出。
 
@@ -34,7 +34,7 @@ function paragraphs(xml: string): Para[] {
 
 type HtmlToDocx = (html: string, options?: HtmlToDocxOptions) => Promise<Uint8Array>
 
-type Converted = { paras: Para[]; footnotes: string; warnings: string[] }
+type Converted = { paras: Para[]; document: string; footnotes: string; warnings: string[] }
 
 async function convert(htmlToDocx: HtmlToDocx, html: string): Promise<Converted> {
   // 警告收进数组：既不刷到测试输出，也能断言告警策略
@@ -46,8 +46,10 @@ async function convert(htmlToDocx: HtmlToDocx, html: string): Promise<Converted>
   })
   const files = unzipSync(u8)
   const footnotes = files['word/footnotes.xml']
+  const document = strFromU8(files['word/document.xml']!)
   return {
-    paras: paragraphs(strFromU8(files['word/document.xml']!)),
+    paras: paragraphs(document),
+    document,
     footnotes: footnotes !== undefined ? strFromU8(footnotes) : '',
     warnings,
   }
@@ -75,15 +77,19 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-describe('KaTeX - 已安装 mathml2omml', () => {
+/** 带 TeX 源码的最小 MathML；TeX 可故意写成 latexToMath 解析不了的样子，用来走退路 */
+const texMath = (tex: string, display = ''): string =>
+  `<math${display}><semantics><mi>x</mi><annotation encoding="application/x-tex">${tex}</annotation></semantics></math>`
+
+describe('KaTeX - 已安装 mathml2omml：仍优先用 TeX 源码', () => {
   const load = async (): Promise<HtmlToDocx> => (await import('../index.js')).htmlToDocx
 
-  it('行内公式：只输出 OMML，.katex-html 的排版文本不再混进正文', async () => {
+  it('行内公式：只输出公式，.katex-html 的排版文本不再混进正文', async () => {
     const { paras } = await convert(await load(), `<p>行内公式 ${KATEX_INLINE} 结束。</p>`)
     expect(paras).toHaveLength(1)
     const [p] = paras
     expect(p!.oMath).toBe(true)
-    expect(p!.mathText).toContain('E=m')
+    expect(p!.mathText).toContain('E')
     // 正文只剩公式两侧的文字：没有拍平的「E=mc2」，也没有零宽空格
     expect(p!.text).toBe('行内公式  结束。')
   })
@@ -96,6 +102,23 @@ describe('KaTeX - 已安装 mathml2omml', () => {
     expect(paras[0]!.mathText).not.toContain('\\int')
   })
 
+  it('积分 / 求和的主体在运算符内，不留空主体（Word 里的虚线占位框）', async () => {
+    // 防回归：mathml2omml 把 KaTeX MathML 里与 ∫ 平级的 x² 放到运算符之外，留下空的 <m:e/>
+    const { document } = await convert(await load(), `<p class="katex-block">${KATEX_BLOCK}</p>`)
+    const nary = /<m:nary>[\s\S]*?<\/m:nary>/.exec(document)?.[0] ?? ''
+    expect(nary).not.toBe('')
+    expect(nary).not.toMatch(/<m:e\s*\/>|<m:e><\/m:e>/)
+    expect(nary).toMatch(/<m:e>[\s\S]*<m:sSup>/)
+  })
+
+  it('矩阵与分段函数的括号是可伸缩的 m:d，而不是普通字符', async () => {
+    const pmatrix =
+      '<math display="block"><semantics><mi>A</mi><annotation encoding="application/x-tex">' +
+      '\\begin{pmatrix} a &amp; b \\\\ c &amp; d \\end{pmatrix}</annotation></semantics></math>'
+    const { document } = await convert(await load(), pmatrix)
+    expect(document).toMatch(/<m:d>[\s\S]*<m:m>/)
+  })
+
   it('块级公式与文字同段时保持行内，不拆段也不丢文字', async () => {
     const { paras } = await convert(await load(), `<p>见 ${KATEX_BLOCK}</p>`)
     expect(paras).toHaveLength(1)
@@ -104,9 +127,12 @@ describe('KaTeX - 已安装 mathml2omml', () => {
     expect(paras[0]!.text.trim()).toBe('见')
   })
 
-  it('annotation 在转换前剥离：mathml2omml 不再逐个公式 console.warn「Type not supported」', async () => {
+  it('TeX 无法解析时退回 mathml2omml，且转换前剥离 annotation，不再 console.warn「Type not supported」', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
-    await convert(await load(), `<p>${KATEX_INLINE}</p><p class="katex-block">${KATEX_BLOCK}</p>`)
+    const { paras, warnings } = await convert(await load(), `<p>${texMath('\\notacommand x')}</p>`)
+    expect(paras[0]!.oMath).toBe(true)
+    expect(paras[0]!.text).toBe('')
+    expect(warnings.filter((w) => w.includes('LaTeX conversion failed'))).toHaveLength(1)
     const noisy = warn.mock.calls.filter((c) => String(c[0]).includes('Type not supported'))
     expect(noisy).toHaveLength(0)
   })
@@ -119,6 +145,20 @@ describe('KaTeX - 已安装 mathml2omml', () => {
   it('非 KaTeX 的 aria-hidden 内容不受影响', async () => {
     const { paras } = await convert(await load(), '<p>a<span aria-hidden="true">★</span>b</p>')
     expect(paras[0]!.text).toBe('a★b')
+  })
+})
+
+describe('KaTeX - docx/math 加载失败、已安装 mathml2omml：退回 mathml2omml', () => {
+  it('KaTeX 公式由 mathml2omml 转换，不退回文本', async () => {
+    const htmlToDocx = await loadWithout('docx/math')
+    const { paras, warnings } = await convert(
+      htmlToDocx,
+      `<p>${KATEX_INLINE}</p><p class="katex-block">${KATEX_BLOCK}</p>`,
+    )
+    expect(paras.map((p) => p.oMath)).toEqual([true, true])
+    expect(paras[1]!.oMathPara).toBe(true)
+    expect(paras.some((p) => /\$/.test(p.text))).toBe(false)
+    expect(warnings.filter((w) => w.includes('docx/math'))).toHaveLength(1)
   })
 })
 
@@ -206,11 +246,9 @@ describe('KaTeX - 未安装 mathml2omml：TeX 源码经 latexToMath 生成正式
   })
 
   it('latexToMath 无法解析的 TeX：退回 $TeX$ / $$TeX$$ 文本并告警', async () => {
-    const tex = (t: string, display = ''): string =>
-      `<math${display}><semantics><mi>x</mi><annotation encoding="application/x-tex">${t}</annotation></semantics></math>`
     const { paras, warnings } = await convert(
       await load(),
-      `<p>a ${tex('\\notacommand x')} b</p>${tex('\\frac{1}{', ' display="block"')}`,
+      `<p>a ${texMath('\\notacommand x')} b</p>${texMath('\\frac{1}{', ' display="block"')}`,
     )
     expect(paras.map((p) => p.text)).toEqual(['a $\\notacommand x$ b', '$$\\frac{1}{$$'])
     expect(paras.some((p) => p.oMath)).toBe(false)

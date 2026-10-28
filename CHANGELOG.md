@@ -39,8 +39,8 @@
 - 未知纸张名（如 `page.size: 'A6'`）现在只告警一次；此前图片尺寸换算逐段、表格宽度逐表重新解析纸张，同一个配置错误会按段落数重复告警。
 - KaTeX 渲染的公式（默认 `htmlAndMathml` 输出）不再在公式后混入 `.katex-html` 排版层拍平出的乱字符（如 `E=mc2`、`∫01x2dx=31` 与零宽空格），只取 `.katex-mathml` 里的 MathML；KaTeX 纯 HTML 输出仍按文本保留。
 - `display="block"` 的公式被包在段落里且段内无其他文字时（如 KaTeX 的 `<p class="katex-block"><span class="katex-display">`），现在独占一段渲染为 `<m:oMathPara>`；此前按行内公式排版。
-- 未安装 `mathml2omml`（或其转换失败）时，带 TeX 源码（`<annotation encoding="application/x-tex">`，KaTeX 默认输出就有）的公式改用 docx 自带的 `docx/math`（MIT，`latexToMath`）生成可编辑的 Word 公式，按需动态加载；TeX 无法解析时输出 `$…$` / `$$…$$` 文本。此前一律是 `[math]` 占位。只用 KaTeX 的场景因此无需安装 LGPL 的 `mathml2omml`，也不再被提示安装它。
-- 转换前剥离 `<annotation>` / `<annotation-xml>`，`mathml2omml` 不再对每个 KaTeX 公式往控制台打印 `Type not supported: annotation`。
+- 带 TeX 源码（`<annotation encoding="application/x-tex">`，KaTeX 默认输出就有）的公式改为优先用 docx 自带的 `docx/math`（MIT，`latexToMath`）转换，按需动态加载；失败再退回 `mathml2omml`，仍失败输出 `$…$` / `$$…$$` 文本。此前只能走 `mathml2omml`，未安装时一律是 `[math]` 占位。**即使已安装 `mathml2omml`，KaTeX 公式的输出也会变化**：此前积分、求和的主体为空（Word 中显示为虚线占位框，作用对象被挤到运算符之外），矩阵、分段函数的括号不随内容伸缩，现在这些结构都能正确还原。只用 KaTeX 的场景因此也无需安装 LGPL 的 `mathml2omml`，不再被提示安装它。
+- `mathml2omml` 转换前剥离 `<annotation>` / `<annotation-xml>`，不再对带这些标签的公式往控制台打印 `Type not supported: annotation`。
 - 链接文字现在挂 Word 内置的 `Hyperlink` 字符样式（蓝色 + 下划线）；此前链接可点击但外观与正文无异。显式 `color` 等内联样式仍优先。
 
 ## [0.2.0] - 2026-05-01

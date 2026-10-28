@@ -42,11 +42,11 @@ export class BuildContext {
   numbering: NumberingEntry[] = []
   /** src → 已就绪的图片资源；buildIr 后由 collectImages 填充 */
   images = new Map<string, ImageAsset>()
-  /** MathML 原文 → OMML 字符串；buildIr 后由 collectMath 异步填充。
-   * 转换失败 / 依赖缺失时该项缺席，渲染层退回 TeX 源码或 [math] 占位。 */
+  /** MathML 原文 → mathml2omml 转出的 OMML 字符串；buildIr 后由 collectMath 异步填充。
+   * 没有 TeX 源码、或 TeX 转换失败的公式才走这条路。 */
   mathOmml = new Map<string, string>()
-  /** MathML 原文 → TeX 公式组件工厂；仅 mathOmml 缺席且公式带 TeX 源码、latexToMath 能解析时才有，
-   * 由 collectMath 填充。渲染优先级：mathOmml > mathLatex > 文本占位。 */
+  /** MathML 原文 → TeX 公式组件工厂；公式带 TeX 源码且 latexToMath 能解析时才有，由 collectMath 填充。
+   * 同一公式只会落在 mathLatex / mathOmml 之一，两者都没有时渲染层退回文本占位。 */
   mathLatex = new Map<string, MathFactory>()
   /** 锚点 id（如 'fn-1'）→ 脚注编号 + 内容；buildIr 阶段由 collectFootnoteDefs 预扫描填充。
    * 正文引用在渲染层据此解析数字 id，buildDocument 据此注入 Document.footnotes。 */

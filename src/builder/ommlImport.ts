@@ -40,8 +40,8 @@ class MathParagraph extends XmlComponent {
 }
 
 /**
- * 公式渲染的统一出口。按优先级取：MathML 转换的 OMML（ctx.mathOmml）> TeX 经 latexToMath
- * 的组件（ctx.mathLatex）。块级包进 `<m:oMathPara>`。
+ * 公式渲染的统一出口。取 collectMath 的转换结果：TeX 经 latexToMath 的组件（ctx.mathLatex）
+ * 或 mathml2omml 的 OMML（ctx.mathOmml），同一公式只会有其一。块级包进 `<m:oMathPara>`。
  * 两者都没有时返回 null，由调用方按所在位置输出 mathFallbackText 占位。
  *
  * 返回值统一按 ParagraphChild 交出：ImportedXmlComponent / MathParagraph 不在其类型联合内，
@@ -52,15 +52,15 @@ export function renderMath(
   display: 'inline' | 'block',
   ctx: BuildContext,
 ): ParagraphChild | null {
-  const omml = ctx.mathOmml.get(mathml)
-  if (omml !== undefined) {
-    const ic = display === 'block' ? blockOmmlToImported(omml) : ommlToImported(omml)
-    if (ic !== null) return ic as unknown as ParagraphChild
-  }
   const make = ctx.mathLatex.get(mathml)
-  if (make === undefined) return null
-  const math = new DocxMath({ children: make() })
-  return display === 'block' ? (new MathParagraph(math) as unknown as ParagraphChild) : math
+  if (make !== undefined) {
+    const math = new DocxMath({ children: make() })
+    return display === 'block' ? (new MathParagraph(math) as unknown as ParagraphChild) : math
+  }
+  const omml = ctx.mathOmml.get(mathml)
+  if (omml === undefined) return null
+  const ic = display === 'block' ? blockOmmlToImported(omml) : ommlToImported(omml)
+  return ic !== null ? (ic as unknown as ParagraphChild) : null
 }
 
 /**

@@ -1,8 +1,8 @@
-// TeX → docx 公式组件的薄包装：MathML 转换不可用时的兜底
+// TeX → docx 公式组件的薄包装：带 TeX 源码的公式的首选转换（见 ir/mathCollector.ts 的转换顺序）
 //
 // 设计要点：
 // 1. 用 docx 自带的 `docx/math` 入口（MIT，与 docx 同包，无额外依赖与许可风险）。它约 77KB，
-//    只在确有公式需要兜底时才动态 import：打包工具会把它拆成异步 chunk，不进主包，用不到时也不会被下载。
+//    只在文档里确有带 TeX 源码的公式时才动态 import：打包工具会把它拆成异步 chunk，不进主包，用不到时也不会被下载。
 // 2. 与 mml2omml.ts 相同，模块级缓存导入结果与「是否警告过」的标志。
 // 3. 返回工厂函数而非组件本身：同一公式在文档中可能出现多次，每处渲染各建一份组件，不共享实例。
 
@@ -43,14 +43,19 @@ export async function latexToMathFactory(
   if (conv === null) {
     if (!warned) {
       warned = true
-      warn('wp-html-to-docx: failed to load "docx/math"; TeX formulas fall back to "$…$" text.')
+      warn(
+        'wp-html-to-docx: failed to load "docx/math"; TeX formulas fall back to "mathml2omml" or "$…$" text.',
+      )
     }
     return null
   }
   try {
     conv(tex)
   } catch (err) {
-    warn(`wp-html-to-docx: LaTeX conversion failed for "${tex}", falling back to text:`, err)
+    warn(
+      `wp-html-to-docx: LaTeX conversion failed for "${tex}", falling back to "mathml2omml" or text:`,
+      err,
+    )
     return null
   }
   return () => conv(tex)
