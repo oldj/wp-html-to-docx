@@ -8,13 +8,12 @@ import {
   Paragraph,
   TextRun,
   type FileChild,
-  type ParagraphChild,
 } from 'docx'
 import type { Block, BlockAlign } from '../types.js'
 import type { BuildContext } from '../ir/buildContext.js'
 import { inlinesToRuns } from './runs.js'
 import { tableBlockToFileChild } from './tables.js'
-import { blockOmmlToImported, ommlToImported } from './ommlImport.js'
+import { mathFallbackText, renderMath } from './ommlImport.js'
 import { INDENT_PER_LEVEL } from './numbering.js'
 
 const ALIGN_MAP: Record<BlockAlign, (typeof AlignmentType)[keyof typeof AlignmentType]> = {
@@ -108,23 +107,16 @@ function appendBlock(block: Block, out: FileChild[], ctx: BuildContext): void {
       out.push(new Paragraph({ children: [new PageBreak()] }))
       return
     case 'math': {
-      const omml = ctx.mathOmml.get(block.mathml)
       // walker 已把无 display=block 的 math 收进了行内路径（inlineCollector），
       // 这里实际只会走到 block.display === 'block' 分支。inline 分支是保险 fallback：
       // 万一外部代码直接构造 Block.math({display:'inline'}) 也不会渲染失败
-      const ic =
-        omml !== undefined
-          ? block.display === 'block'
-            ? blockOmmlToImported(omml)
-            : ommlToImported(omml)
-          : null
-      if (ic !== null) {
-        // ImportedXmlComponent 不在 ParagraphChild 类型联合内，但运行时兼容
-        out.push(new Paragraph({ children: [ic as unknown as ParagraphChild] }))
-      } else {
-        // 转换失败 / 依赖缺失：退回 [math] 占位段
-        out.push(new Paragraph({ children: [new TextRun({ text: '[math]' })] }))
-      }
+      const run = renderMath(block.mathml, block.display, ctx)
+      // 两种转换都不可用：退回 TeX 源码或 [math] 占位段
+      out.push(
+        new Paragraph({
+          children: [run ?? new TextRun({ text: mathFallbackText(block.tex, block.display) })],
+        }),
+      )
       return
     }
     default:

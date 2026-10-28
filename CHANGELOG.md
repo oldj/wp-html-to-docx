@@ -37,6 +37,10 @@
 - 页眉页脚三栏（left / center / right）的制表位现在按实际版心宽度计算；此前写死为 A4 默认版心（4513 / 9026 twip），横向、A3 等大纸张或自定义左右边距时右栏会落在页面中部。
 - 列表内的表格（无 `<colgroup>`）现在写出「版心 − 列表缩进」的绝对表宽，网格随之收窄；此前表宽为 auto，docx 9.15 会按整个版心推导列宽，Google Docs / Pages / LibreOffice 等以网格为准的软件里表格会溢出右边距一个缩进量。表格单元格内的列表表格维持 auto。
 - 未知纸张名（如 `page.size: 'A6'`）现在只告警一次；此前图片尺寸换算逐段、表格宽度逐表重新解析纸张，同一个配置错误会按段落数重复告警。
+- KaTeX 渲染的公式（默认 `htmlAndMathml` 输出）不再在公式后混入 `.katex-html` 排版层拍平出的乱字符（如 `E=mc2`、`∫01x2dx=31` 与零宽空格），只取 `.katex-mathml` 里的 MathML；KaTeX 纯 HTML 输出仍按文本保留。
+- `display="block"` 的公式被包在段落里且段内无其他文字时（如 KaTeX 的 `<p class="katex-block"><span class="katex-display">`），现在独占一段渲染为 `<m:oMathPara>`；此前按行内公式排版。
+- 未安装 `mathml2omml`（或其转换失败）时，带 TeX 源码（`<annotation encoding="application/x-tex">`，KaTeX / MathJax 默认都会写）的公式改用 docx 自带的 `docx/math`（MIT，`latexToMath`）生成可编辑的 Word 公式，按需动态加载；TeX 无法解析时输出 `$…$` / `$$…$$` 文本。此前一律是 `[math]` 占位。只用 KaTeX / MathJax 的场景因此无需安装 LGPL 的 `mathml2omml`，也不再被提示安装它。
+- 转换前剥离 `<annotation>` / `<annotation-xml>`，`mathml2omml` 不再对每个 KaTeX 公式往控制台打印 `Type not supported: annotation`。
 - 链接文字现在挂 Word 内置的 `Hyperlink` 字符样式（蓝色 + 下划线）；此前链接可点击但外观与正文无异。显式 `color` 等内联样式仍优先。
 
 ## [0.2.0] - 2026-05-01

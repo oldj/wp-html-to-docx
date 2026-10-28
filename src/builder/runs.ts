@@ -13,7 +13,7 @@ import type { Inline, InlineStyle } from '../types.js'
 import type { BuildContext } from '../ir/buildContext.js'
 import { pageContentWidthPx } from '../utils/units.js'
 import { silentWarn } from '../utils/log.js'
-import { ommlToImported } from './ommlImport.js'
+import { mathFallbackText, renderMath } from './ommlImport.js'
 import { resolveImageDisplaySize } from './imageLayout.js'
 
 /**
@@ -21,7 +21,7 @@ import { resolveImageDisplaySize } from './imageLayout.js'
  * - text → TextRun（含 link 时再套一层 ExternalHyperlink）
  * - break → TextRun({ break: 1 })（行内 <br>）
  * - pageBreak → PageBreak run（行内 <wp-page-break>，OOXML 输出 <w:br w:type="page"/>）
- * - math → 行内 <m:oMath>（来自 ctx.mathOmml 的 OMML），转换失败退回 [math] 文本
+ * - math → 行内 <m:oMath>（OMML 或 latexToMath 组件，见 renderMath），都不可用时退回 TeX 源码或 [math] 文本
  * - image：从 ctx.images 取已加载资产；缺失时按 onUnresolvedImage 决定 placeholder（用 alt 占位）/ skip
  */
 export function inlinesToRuns(inlines: Inline[], ctx: BuildContext): ParagraphChild[] {
@@ -50,16 +50,10 @@ export function inlinesToRuns(inlines: Inline[], ctx: BuildContext): ParagraphCh
       continue
     }
     if (item.kind === 'math') {
-      const omml = ctx.mathOmml.get(item.mathml)
-      // ParagraphChild 的类型签名不含 ImportedXmlComponent，但 docx 在序列化时
-      // 只调用每个 child 的 prepForXml，运行时兼容。这里用 unknown 强转规避类型限制。
-      const ic = omml !== undefined ? ommlToImported(omml) : null
-      if (ic !== null) {
-        out.push(ic as unknown as ParagraphChild)
-      } else {
-        // 转换失败 / 依赖缺失：退回 [math] 文本，与改造前行为一致
-        out.push(textRunFor('[math]', {}))
-      }
+      // 段内公式一律按行内渲染（即便声明了 display=block：与文字混排时不能独占一段）；
+      // 两种转换都不可用时退回 TeX 源码（$…$）或 [math] 文本
+      const run = renderMath(item.mathml, 'inline', ctx)
+      out.push(run ?? textRunFor(mathFallbackText(item.tex, item.display ?? 'inline'), {}))
       continue
     }
     if (item.kind === 'image') {

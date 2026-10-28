@@ -109,9 +109,23 @@ function collectOne(
   }
   if (tag === 'math') {
     // 保留 MathML 原文；后续在 collectMath 阶段异步转 OMML，渲染层据此输出 m:oMath。
-    // 转换失败 / 依赖缺失时，渲染层退回 [math] 占位
-    out.push({ kind: 'math', mathml: serializeNode(node) })
+    // 转换失败 / 依赖缺失时，渲染层退回 TeX 源码或 [math] 占位
+    out.push({ kind: 'math', ...readMathElement(node) })
     return
+  }
+  // KaTeX：span.katex 里同时有 MathML 副本（.katex-mathml）和供浏览器排版的 .katex-html。
+  // 后者是一堆定位用的 span，拍平后成了「E=mc2」「∫01x2dx=31」这类乱字符，还与公式重复。
+  // 只在确有 MathML 副本时丢弃排版层；KaTeX 的纯 HTML 输出（无 .katex-mathml）里
+  // 排版层是唯一内容，仍按普通文本收集。判据刻意收窄到 KaTeX 结构，不泛化为忽略
+  // aria-hidden，以免误删其他来源中可见的装饰内容。
+  if (hasClass(node, 'katex')) {
+    const mathmlPart = adapter
+      .getChildNodes(node)
+      .find((c) => isElement(c) && hasClass(c, 'katex-mathml'))
+    if (mathmlPart !== undefined) {
+      collectOne(mathmlPart, applyTagStyle(tag, activeStyle, node), out, preserveWhitespace)
+      return
+    }
   }
   if (tag === 'img') {
     const src = getAttr(node, 'src') ?? ''
@@ -189,6 +203,52 @@ function applyTagStyle(tag: string, base: InlineStyle, el: ParsedElement): Inlin
   }
   // 第二层：inline `style` 属性按 plan.md「进阶 B」范围内叠加
   return mergeInlineCss(style, getAttr(el, 'style'))
+}
+
+/**
+ * 读取 <math> 元素：序列化原文、display 声明，以及 TeX 源码（若有）。
+ * 行内收集与块级 walker 共用，保证两条路径对同一个 <math> 得出一致的 IR。
+ */
+export function readMathElement(node: ParsedElement): {
+  mathml: string
+  display: 'inline' | 'block'
+  tex?: string
+} {
+  const tex = findTexAnnotation(node)
+  return {
+    mathml: serializeNode(node),
+    display: getAttr(node, 'display') === 'block' ? 'block' : 'inline',
+    ...(tex !== undefined ? { tex } : {}),
+  }
+}
+
+/**
+ * 取 `<semantics>` 下 `<annotation encoding="application/x-tex">` 的文本（KaTeX、MathJax 等都会写）。
+ * 没有或为空时返回 undefined。
+ */
+function findTexAnnotation(el: ParsedElement): string | undefined {
+  for (const child of adapter.getChildNodes(el)) {
+    if (!isElement(child)) continue
+    if (
+      child.tagName === 'annotation' &&
+      getAttr(child, 'encoding')?.trim().toLowerCase() === 'application/x-tex'
+    ) {
+      const tex = textContent(child).trim()
+      return tex.length > 0 ? tex : undefined
+    }
+    const nested = findTexAnnotation(child)
+    if (nested !== undefined) return nested
+  }
+  return undefined
+}
+
+function textContent(el: ParsedElement): string {
+  let out = ''
+  for (const child of adapter.getChildNodes(el)) {
+    if (isTextNode(child)) out += child.value
+    else if (isElement(child)) out += textContent(child)
+  }
+  return out
 }
 
 /**

@@ -44,8 +44,13 @@ export type Inline =
       fullWidth?: boolean
       style: InlineStyle
     }
-  /** 行内 <math>：原文 MathML，转换在 collectMath 阶段写入 ctx.mathOmml */
-  | { kind: 'math'; mathml: string }
+  /**
+   * 行内 <math>：原文 MathML，转换在 collectMath 阶段写入 ctx.mathOmml。
+   * `display` 为 'block' 时表示元素自身声明了 display="block" 却身处段落内（如 KaTeX 的
+   * `<p><span class="katex-display">…</span></p>`）；段落里只有它时 buildIr 会升级为块级 math。
+   * `tex` 为 `<annotation encoding="application/x-tex">` 里的 TeX 源码，转换不可用时作可读占位。
+   */
+  | { kind: 'math'; mathml: string; display?: 'inline' | 'block'; tex?: string }
   /** 行内分页符：来自段内 <wp-page-break>，渲染为 docx PageBreak run，与同段文本同时存在 */
   | { kind: 'pageBreak' }
   /**
@@ -106,7 +111,8 @@ export type Block =
        */
       widthPct?: number
     }
-  | { kind: 'math'; mathml: string; display: 'inline' | 'block' }
+  /** 块级公式；`tex` 同行内 math，转换不可用时作可读占位 */
+  | { kind: 'math'; mathml: string; display: 'inline' | 'block'; tex?: string }
   /** 块级分页符：来源 <hr class="page-break"> / <wp-page-break> / 块级元素 CSS page-break-* */
   | { kind: 'pageBreak' }
 

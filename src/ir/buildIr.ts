@@ -10,12 +10,16 @@ import {
   type ParsedElement,
   type ParsedNode,
 } from '../parser/parseHtml.js'
-import { collectInlines, inlineStyleFromElement, isInlineTag } from './inlineCollector.js'
+import {
+  collectInlines,
+  inlineStyleFromElement,
+  isInlineTag,
+  readMathElement,
+} from './inlineCollector.js'
 import type { BuildContext } from './buildContext.js'
 import { isWhitespaceOnly } from '../utils/html.js'
 import { parseInlineStyle, parsePageBreaks, parseTextAlign, parseWidthValue } from '../utils/css.js'
 import { resolveListStyle, type ListSpec } from '../builder/numbering.js'
-import { serializeNode } from '../utils/serializeNode.js'
 
 const HEADING_LEVELS: Record<string, 1 | 2 | 3 | 4 | 5 | 6> = {
   h1: 1,
@@ -155,7 +159,7 @@ function walkBlocks(
     if (inlineBuffer.length === 0) return
     const inlines = collectInlines(inlineBuffer, ctx.options.preserveWhitespace ?? false, baseStyle)
     if (inlines.length > 0) {
-      out.push({ kind: 'paragraph', inlines })
+      out.push(paragraphBlock(inlines))
     }
     inlineBuffer = []
   }
@@ -238,11 +242,10 @@ function emitBlockForElement(
   switch (tag) {
     case 'p':
       return [
-        {
-          kind: 'paragraph',
-          inlines: collectInlines(adapter.getChildNodes(node), preserveWs, ownStyle),
-          align: blockAlign(node),
-        },
+        paragraphBlock(
+          collectInlines(adapter.getChildNodes(node), preserveWs, ownStyle),
+          blockAlign(node),
+        ),
       ]
     case 'ul':
     case 'ol':
@@ -286,13 +289,7 @@ function emitBlockForElement(
       ]
     }
     case 'math':
-      return [
-        {
-          kind: 'math',
-          mathml: serializeNode(node),
-          display: getAttr(node, 'display') === 'block' ? 'block' : 'inline',
-        },
-      ]
+      return [{ kind: 'math', ...readMathElement(node) }]
     case 'wp-page-break': {
       // parse5 不识别 `<wp-page-break/>` 自闭合，后续兄弟节点会被解析为它的子节点；
       // 因此把子节点继续按块级处理，附在分页符之后，避免丢内容
@@ -303,6 +300,27 @@ function emitBlockForElement(
       // 未知块级容器：递归其内部，自身 style 继续向内继承（div/section 常作样式包装器）
       return walkBlocks(adapter.getChildNodes(node), ctx, listStack, ownStyle)
   }
+}
+
+/**
+ * 由段内 inlines 生成段落块。
+ * 段落里除空白外只有一个声明了 display="block" 的公式时（KaTeX 块级公式写作
+ * `<p class="katex-block"><span class="katex-display">…</span></p>`），升级为块级 math，
+ * 渲染为独占一段的 `<m:oMathPara>`；否则 Word 会按行内公式的文本样式排版（积分上下限缩在右侧等）。
+ * 公式与文字混排时保持行内，不拆段。
+ */
+function paragraphBlock(inlines: Inline[], align?: BlockAlign): Block {
+  const meaningful = inlines.filter((i) => !(i.kind === 'text' && i.text.trim() === ''))
+  const only = meaningful[0]
+  if (meaningful.length === 1 && only?.kind === 'math' && only.display === 'block') {
+    return {
+      kind: 'math',
+      mathml: only.mathml,
+      display: 'block',
+      ...(only.tex !== undefined ? { tex: only.tex } : {}),
+    }
+  }
+  return { kind: 'paragraph', inlines, align }
 }
 
 /** 从元素 inline style 取分页指令；不含 style 属性时返回 { before:false, after:false } */

@@ -421,28 +421,34 @@ class 列表中包含 `page-break` token 即触发（`<hr class="foo page-break 
 
 ### 启用方式
 
-数学转换依赖第三方包 [`mathml2omml`](https://www.npmjs.com/package/mathml2omml)（**LGPL-3.0-or-later**），作为 **optional peerDependency** 提供。需要数学公式时手动安装：
+公式按以下优先级转换，任一步失败都不会让整个转换失败：
 
-```bash
-npm install mathml2omml
-```
+1. **MathML → OMML**：依赖第三方包 [`mathml2omml`](https://www.npmjs.com/package/mathml2omml)（**LGPL-3.0-or-later**），作为 **optional peerDependency** 提供，需要时手动安装：
 
-未安装时，`<math>` 会退回到 `[math]` 文本占位，并在首次出现时控制台 warn 一次（不会让整个转换失败）。
+   ```bash
+   npm install mathml2omml
+   ```
+
+2. **TeX → 公式**：未安装 `mathml2omml`（或其转换失败）、且公式带 TeX 源码（`<annotation encoding="application/x-tex">`，KaTeX / MathJax 默认都会写）时，用 docx 自带的 `docx/math`（MIT，`latexToMath`）生成同样可编辑的 Word 公式。**只用 KaTeX / MathJax 的场景无需安装任何额外依赖**，也不会被提示安装 `mathml2omml`。
+3. **文本占位**：TeX 无法解析时输出 `$…$`（块级 `$$…$$`），读者能看懂，Microsoft 365 的公式编辑器也能以 LaTeX 格式把它转回正式公式；没有 TeX 源码时输出 `[math]`。
+
+告警：遇到没有 TeX 源码的公式而 `mathml2omml` 未安装时提示一次；TeX 无法解析时逐个告警。
 
 ### 行为细节
 
 - 默认按 HTML5 phrasing content 处理：`<math>...</math>` 是行内的，与前后文字共享段落
-- 升级到块级需要显式 `display="block"`：在 `<m:oMathPara>` 中独占一段
+- 升级到块级需要显式 `display="block"`：在 `<m:oMathPara>` 中独占一段。`display="block"` 的公式被包在段落里、且段落中没有其他文字时（如 KaTeX 的 `<p><span class="katex-display">…</span></p>`）同样独占一段
 - 同一段 MathML 在文档中重复出现时只转换一次（按字符串去重）
+- KaTeX 输出：只取 `.katex-mathml` 里的 MathML，跳过供浏览器排版的 `.katex-html`（否则会拍平成 `E=mc2` 这类乱字符）；KaTeX 的纯 HTML 输出（没有 MathML 副本）仍按文本保留
 
 ### 浏览器打包
 
-由于动态 `await import('mathml2omml')`，部分构建工具默认不会把 optional peer 打进 bundle。如果你的浏览器场景需要数学公式：
+`mathml2omml` 与 `docx/math`（约 77KB）都是动态 `await import(...)`，只在文档里确有公式需要时才加载，主包不会变大：
 
-- **Vite / Rollup**：直接 `npm install mathml2omml` 后即可，运行时被打入。
-- **Webpack**：可能需要在 `optimization.splitChunks` 或异步 chunk 配置里允许动态 import。
+- **`docx/math`** 随 `docx` 依赖一起安装，打包工具会把它拆成异步 chunk，无需额外配置。
+- **`mathml2omml`**：部分构建工具默认不会把 optional peer 打进 bundle。Vite / Rollup 直接 `npm install mathml2omml` 后即可；Webpack 可能需要在 `optimization.splitChunks` 或异步 chunk 配置里允许动态 import。
 
-不需要数学公式的浏览器场景可以放心忽略——动态 import 失败会被库内部捕获并退回占位。
+不需要数学公式的浏览器场景可以放心忽略——动态 import 失败会被库内部捕获并退回下一级。
 
 ## 脚注
 
