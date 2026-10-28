@@ -233,4 +233,9 @@ describe('KaTeX - mathml2omml 与 docx/math 都不可用：TeX 源码文本占�
     expect(paras.some((p) => p.oMath)).toBe(false)
     expect(warnings.filter((w) => w.includes('docx/math'))).toHaveLength(1)
   })
+
+  it('块级公式与文字同段：与公式路径一样按行内处理，降级为 $TeX$ 而非 $$TeX$$', async () => {
+    const { paras } = await convert(await load(), `<p>见 ${KATEX_BLOCK}</p>`)
+    expect(paras.map((p) => p.text)).toEqual(['见 $\\int_0^1 x^2 dx = \\frac{1}{3}$'])
+  })
 })

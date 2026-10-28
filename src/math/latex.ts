@@ -2,7 +2,7 @@
 //
 // 设计要点：
 // 1. 用 docx 自带的 `docx/math` 入口（MIT，与 docx 同包，无额外依赖与许可风险）。它约 77KB，
-//    只在确有公式需要兜底时才动态 import，用不到公式的调用方的浏览器包里不会带上它。
+//    只在确有公式需要兜底时才动态 import：打包工具会把它拆成异步 chunk，不进主包，用不到时也不会被下载。
 // 2. 与 mml2omml.ts 相同，模块级缓存导入结果与「是否警告过」的标志。
 // 3. 返回工厂函数而非组件本身：同一公式在文档中可能出现多次，每处渲染各建一份组件，不共享实例。
 
@@ -26,12 +26,6 @@ async function loadConverter(): Promise<LatexToMath | null> {
     cached = null
   }
   return cached
-}
-
-/** 仅在测试中使用：重置模块状态 */
-export function _resetForTest(): void {
-  cached = undefined
-  warned = false
 }
 
 /**

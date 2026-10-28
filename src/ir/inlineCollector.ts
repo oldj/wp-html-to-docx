@@ -223,7 +223,8 @@ export function readMathElement(node: ParsedElement): {
 }
 
 /**
- * 取 `<semantics>` 下 `<annotation encoding="application/x-tex">` 的文本（KaTeX、MathJax 等都会写）。
+ * 取 `<semantics>` 下 `<annotation encoding="application/x-tex">` 的文本。KaTeX 默认输出就有；
+ * MathJax 3 的默认输出没有，这类公式只能靠 mathml2omml。
  * 没有或为空时返回 undefined。
  */
 function findTexAnnotation(el: ParsedElement): string | undefined {

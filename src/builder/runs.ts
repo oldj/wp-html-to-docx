@@ -51,9 +51,9 @@ export function inlinesToRuns(inlines: Inline[], ctx: BuildContext): ParagraphCh
     }
     if (item.kind === 'math') {
       // 段内公式一律按行内渲染（即便声明了 display=block：与文字混排时不能独占一段）；
-      // 两种转换都不可用时退回 TeX 源码（$…$）或 [math] 文本
+      // 两种转换都不可用时退回 TeX 源码或 [math] 文本，同样按行内写成 $…$，与公式的实际呈现一致
       const run = renderMath(item.mathml, 'inline', ctx)
-      out.push(run ?? textRunFor(mathFallbackText(item.tex, item.display ?? 'inline'), {}))
+      out.push(run ?? textRunFor(mathFallbackText(item.tex, 'inline'), {}))
       continue
     }
     if (item.kind === 'image') {

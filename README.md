@@ -429,7 +429,7 @@ class 列表中包含 `page-break` token 即触发（`<hr class="foo page-break 
    npm install mathml2omml
    ```
 
-2. **TeX → 公式**：未安装 `mathml2omml`（或其转换失败）、且公式带 TeX 源码（`<annotation encoding="application/x-tex">`，KaTeX / MathJax 默认都会写）时，用 docx 自带的 `docx/math`（MIT，`latexToMath`）生成同样可编辑的 Word 公式。**只用 KaTeX / MathJax 的场景无需安装任何额外依赖**，也不会被提示安装 `mathml2omml`。
+2. **TeX → 公式**：未安装 `mathml2omml`（或其转换失败）、且公式带 TeX 源码（`<annotation encoding="application/x-tex">`，KaTeX 默认输出就有）时，用 docx 自带的 `docx/math`（MIT，`latexToMath`）生成同样可编辑的 Word 公式。**只用 KaTeX 的场景无需安装任何额外依赖**，也不会被提示安装 `mathml2omml`。MathJax 3 的默认输出不带 TeX 源码，仍需安装 `mathml2omml`。
 3. **文本占位**：TeX 无法解析时输出 `$…$`（块级 `$$…$$`），读者能看懂，Microsoft 365 的公式编辑器也能以 LaTeX 格式把它转回正式公式；没有 TeX 源码时输出 `[math]`。
 
 告警：遇到没有 TeX 源码的公式而 `mathml2omml` 未安装时提示一次；TeX 无法解析时逐个告警。
