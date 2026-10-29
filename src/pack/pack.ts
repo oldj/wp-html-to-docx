@@ -9,8 +9,9 @@ const PRECOMPRESSED_MEDIA = /^word\/media\/[^/]+\.(?:jpe?g|png|gif)$/i
 
 type PackageData = string | ArrayBuffer | ArrayBufferView
 
+// 私有编译器的形状只是预期，返回值须在运行时校验（见 compileFiles）
 type PackageCompiler = {
-  compile(doc: Document): Map<string, PackageData>
+  compile(doc: Document): unknown
 }
 
 const encoder = new TextEncoder()
@@ -32,18 +33,43 @@ function toBytes(data: PackageData): Uint8Array {
  * 540 ms → 228 ms，体积几乎不变；手机 WebView 上打包是整次导出里最慢的一段，省下的时间更可观。
  */
 export async function pack(doc: Document): Promise<Uint8Array> {
-  // TODO: docx 没有公开「按文件设压缩级别」的接口，这里借用 Packer 的私有静态编译器取出包内文件，
-  // 再自行 zip。docx 改掉这一内部结构时退回公开的 toArrayBuffer：只是慢一些，产物等价。
-  const compiler = (Packer as unknown as { compiler?: PackageCompiler }).compiler
-  if (typeof compiler?.compile !== 'function') {
-    return new Uint8Array(await Packer.toArrayBuffer(doc))
-  }
+  const files = compileFiles(doc)
+  if (files === undefined) return new Uint8Array(await Packer.toArrayBuffer(doc))
 
   const input: Zippable = {}
   // 保持 compile 给出的文件顺序（与 docx 自己打包一致）；对象按插入顺序枚举非整数键
-  for (const [path, data] of compiler.compile(doc)) {
+  for (const [path, data] of files) {
     const bytes = toBytes(data)
     input[path] = PRECOMPRESSED_MEDIA.test(path) ? [bytes, { level: 0 }] : bytes
   }
   return zipSync(input)
+}
+
+/**
+ * 借用 docx `Packer` 的私有编译器取出包内文件（路径 → 内容）。
+ * 编译器不存在、调用抛错，或返回值不是预期的 `Map<string, PackageData>` 时返回 undefined，
+ * 由调用方退回公开的 `Packer.toArrayBuffer`：最坏只是慢一些，而不会把认不出的内容写成空文件、
+ * 产出看似正常实则损坏的 docx。
+ */
+function compileFiles(doc: Document): Map<string, PackageData> | undefined {
+  // TODO: docx 没有公开「按文件设压缩级别」的接口，只能借用私有静态成员；docx 提供该选项后改用公开接口
+  const compiler = (Packer as unknown as { compiler?: PackageCompiler }).compiler
+  if (typeof compiler?.compile !== 'function') return undefined
+
+  let files: unknown
+  try {
+    files = compiler.compile(doc)
+  } catch {
+    // 真正的文档错误在 toArrayBuffer 里会再次抛出，不会被吞掉
+    return undefined
+  }
+  if (!(files instanceof Map)) return undefined
+  for (const [path, data] of files as Map<unknown, unknown>) {
+    if (typeof path !== 'string' || !isPackageData(data)) return undefined
+  }
+  return files as Map<string, PackageData>
+}
+
+function isPackageData(data: unknown): data is PackageData {
+  return typeof data === 'string' || ArrayBuffer.isView(data) || data instanceof ArrayBuffer
 }

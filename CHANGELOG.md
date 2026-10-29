@@ -24,7 +24,7 @@
 
 ### Changed
 
-- 打包：jpg / png / gif 图片以 STORE（不压缩）存入 docx，其余部件仍用 DEFLATE。这些格式本身已压缩，再 DEFLATE 几乎不缩小体积，却是打包里最耗时的一步：100 万字 + 50 张 300 KB 图片的文档在 Node 上打包从 540 ms 降到 228 ms，产物体积基本不变。实现借用 docx `Packer` 的内部编译器取出包内文件后自行用 fflate 打包，docx 内部结构变化时自动退回 `Packer.toArrayBuffer`；`fflate` 因此从开发依赖移到运行时依赖。
+- 打包：jpg / png / gif 图片以 STORE（不压缩）存入 docx，其余部件仍用 DEFLATE。这些格式本身已压缩，再 DEFLATE 几乎不缩小体积，却是打包里最耗时的一步：100 万字 + 50 张 300 KB 图片的文档在 Node 上打包从 540 ms 降到 228 ms，产物体积基本不变。实现借用 docx `Packer` 的内部编译器取出包内文件后自行用 fflate 打包，该编译器不存在、调用抛错或返回值不符合预期时，自动退回 `Packer.toArrayBuffer`（只是慢一些，不会产出损坏的包）；`fflate` 因此从开发依赖移到运行时依赖。
 - 表宽：`<table style="width: X%">` / `<table width="X%">` 现在写入 `<w:tblW w:type="pct">` 对应的百分比；此前一律忽略、按 100% 满宽输出。**这是可见的行为变化**——声明过百分比表宽的 HTML 转出来会比以前窄。未声明宽度或声明为绝对值（`600px`）时仍按 100% 满宽，与此前一致。
 
 ### Fixed
