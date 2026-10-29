@@ -13,7 +13,10 @@ export type InlineStyle = {
   strike?: boolean
   /** 行内代码（等宽字体） */
   code?: boolean
-  /** 超链接目标 URL */
+  /**
+   * 超链接目标：绝对 URL（http / https / mailto / tel / ftp），或 `#id` 形式的文档内锚点。
+   * 锚点在渲染期按 ctx.anchors 解析为 Word 书签，目标不存在时只保留文字。
+   */
   link?: string
   /** 文本颜色：6 位大写 hex（无 #），来自 inline `style="color: ..."` */
   color?: string
@@ -67,17 +70,28 @@ export type ListRef = {
 }
 
 /** 块级节点。`align` 仅在块级 `style="text-align"` 直接出现在元素上时才被填入 */
+/**
+ * 段落类块（paragraph / heading / list-item / list-continuation）可带的 Word 书签名。
+ * 来自带 id 的 HTML 元素，`<a href="#id">` 据此生成文档内链接；一个块可承接多个 id（如 div 与其内首段各有 id）。
+ */
+type Anchored = { anchors?: string[] }
+
 export type Block =
-  | { kind: 'paragraph'; inlines: Inline[]; align?: BlockAlign }
-  | { kind: 'heading'; level: 1 | 2 | 3 | 4 | 5 | 6; inlines: Inline[]; align?: BlockAlign }
+  | ({ kind: 'paragraph'; inlines: Inline[]; align?: BlockAlign } & Anchored)
+  | ({
+      kind: 'heading'
+      level: 1 | 2 | 3 | 4 | 5 | 6
+      inlines: Inline[]
+      align?: BlockAlign
+    } & Anchored)
   /** 列表项被平铺：嵌套 list 在 IR 层产出多个 list-item，按出现顺序排列，level 区分缩进 */
-  | { kind: 'list-item'; inlines: Inline[]; ref: ListRef; align?: BlockAlign }
+  | ({ kind: 'list-item'; inlines: Inline[]; ref: ListRef; align?: BlockAlign } & Anchored)
   /**
    * 列表项内的「延续段落」。
    * 来源：同一个 <li> 内的第二个及之后的块级段落（如多 <p>、块后裸文本等）。
    * 渲染：作为独立段落，缩进对齐到 list 文本起始位置，但不带编号 / 项目符号。
    */
-  | { kind: 'list-continuation'; inlines: Inline[]; level: number; align?: BlockAlign }
+  | ({ kind: 'list-continuation'; inlines: Inline[]; level: number; align?: BlockAlign } & Anchored)
   /**
    * `indent` 为额外左缩进（twip），来自被嵌入 list 时由 walkListItem 注入。
    * 顶层 blockquote 不带 indent；blockquote 自带的 720 视觉缩进由 builder 负责，

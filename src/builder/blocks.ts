@@ -2,14 +2,16 @@
 
 import {
   AlignmentType,
+  Bookmark,
   BorderStyle,
   HeadingLevel,
   PageBreak,
   Paragraph,
   TextRun,
   type FileChild,
+  type ParagraphChild,
 } from 'docx'
-import type { Block, BlockAlign } from '../types.js'
+import type { Block, BlockAlign, Inline } from '../types.js'
 import type { BuildContext } from '../ir/buildContext.js'
 import { inlinesToRuns } from './runs.js'
 import { tableBlockToFileChild } from './tables.js'
@@ -38,6 +40,18 @@ const HEADING_MAP = {
   6: HeadingLevel.HEADING_6,
 } as const
 
+/**
+ * 段落类块的内容：inline runs 外再按 anchors 包上 Word 书签（多个时逐层嵌套），供 `#id` 链接跳转。
+ */
+function paragraphChildren(
+  block: { inlines: Inline[]; anchors?: string[] },
+  ctx: BuildContext,
+): ParagraphChild[] {
+  let children = inlinesToRuns(block.inlines, ctx)
+  for (const name of block.anchors ?? []) children = [new Bookmark({ id: name, children })]
+  return children
+}
+
 export function blocksToChildren(blocks: Block[], ctx: BuildContext): FileChild[] {
   const out: FileChild[] = []
   for (const block of blocks) appendBlock(block, out, ctx)
@@ -50,7 +64,7 @@ function appendBlock(block: Block, out: FileChild[], ctx: BuildContext): void {
       out.push(
         new Paragraph({
           alignment: toAlignment(block.align),
-          children: inlinesToRuns(block.inlines, ctx),
+          children: paragraphChildren(block, ctx),
         }),
       )
       return
@@ -59,7 +73,7 @@ function appendBlock(block: Block, out: FileChild[], ctx: BuildContext): void {
         new Paragraph({
           heading: HEADING_MAP[block.level],
           alignment: toAlignment(block.align),
-          children: inlinesToRuns(block.inlines, ctx),
+          children: paragraphChildren(block, ctx),
         }),
       )
       return
@@ -68,7 +82,7 @@ function appendBlock(block: Block, out: FileChild[], ctx: BuildContext): void {
         new Paragraph({
           numbering: { reference: block.ref.reference, level: block.ref.level },
           alignment: toAlignment(block.align),
-          children: inlinesToRuns(block.inlines, ctx),
+          children: paragraphChildren(block, ctx),
         }),
       )
       return
@@ -78,7 +92,7 @@ function appendBlock(block: Block, out: FileChild[], ctx: BuildContext): void {
         new Paragraph({
           indent: { left: INDENT_PER_LEVEL * (block.level + 1) },
           alignment: toAlignment(block.align),
-          children: inlinesToRuns(block.inlines, ctx),
+          children: paragraphChildren(block, ctx),
         }),
       )
       return
@@ -147,7 +161,7 @@ function appendBlockquote(
         indent: blockquoteIndent(extraIndent),
         border: BLOCKQUOTE_BORDER,
         alignment: toAlignment(block.align),
-        children: inlinesToRuns(block.inlines, ctx),
+        children: paragraphChildren(block, ctx),
       }),
     )
     return
@@ -160,7 +174,7 @@ function appendBlockquote(
         indent: blockquoteIndent(extraIndent),
         border: BLOCKQUOTE_BORDER,
         alignment: toAlignment(block.align),
-        children: inlinesToRuns(block.inlines, ctx),
+        children: paragraphChildren(block, ctx),
       }),
     )
     return

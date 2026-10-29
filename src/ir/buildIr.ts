@@ -17,6 +17,7 @@ import {
   readMathElement,
 } from './inlineCollector.js'
 import type { BuildContext } from './buildContext.js'
+import { walkBlocksDeep } from './walkIr.js'
 import { isWhitespaceOnly } from '../utils/html.js'
 import { parseInlineStyle, parsePageBreaks, parseTextAlign, parseWidthValue } from '../utils/css.js'
 import { resolveListStyle, type ListSpec } from '../builder/numbering.js'
@@ -191,7 +192,9 @@ function walkBlocks(
     // 叠加产生 2 个分页符——视为用户冲突写法，不特判
     const sides = pageBreakSides(node)
     if (sides.before) out.push({ kind: 'pageBreak' })
-    out.push(...emitBlockForElement(node, ctx, listStack, baseStyle))
+    const blocks = emitBlockForElement(node, ctx, listStack, baseStyle)
+    attachAnchor(node, blocks, ctx)
+    out.push(...blocks)
     if (sides.after) out.push({ kind: 'pageBreak' })
   }
   flushInline()
@@ -303,6 +306,39 @@ function emitBlockForElement(
 }
 
 /**
+ * 元素带 id 时，把书签挂到它产出的第一个段落类块上（深度优先，含 blockquote / 表格单元格内），
+ * 供 `<a href="#id">` 跳转。产出里没有段落类块（如只有 hr / pre / 块级公式）时不注册，
+ * 指向它的链接在渲染期退回纯文字。
+ * 嵌套元素先于外层处理（emitBlockForElement 内部已递归），同一个块可能先后挂上内外两层的书签。
+ */
+function attachAnchor(el: ParsedElement, blocks: Block[], ctx: BuildContext): void {
+  const id = getAttr(el, 'id')?.trim()
+  if (id === undefined || id.length === 0 || ctx.anchors.has(id)) return
+  const candidates: AnchorableBlock[] = []
+  walkBlocksDeep(blocks, (block) => {
+    if (isAnchorable(block)) candidates.push(block)
+  })
+  const target = candidates[0]
+  if (target === undefined) return
+  const name = ctx.registerAnchor(id)
+  if (name !== undefined) target.anchors = [...(target.anchors ?? []), name]
+}
+
+type AnchorableBlock = Extract<
+  Block,
+  { kind: 'paragraph' | 'heading' | 'list-item' | 'list-continuation' }
+>
+
+function isAnchorable(block: Block): block is AnchorableBlock {
+  return (
+    block.kind === 'paragraph' ||
+    block.kind === 'heading' ||
+    block.kind === 'list-item' ||
+    block.kind === 'list-continuation'
+  )
+}
+
+/**
  * 由段内 inlines 生成段落块。
  * 段落里除空白外只有一个声明了 display="block" 的公式时（KaTeX 块级公式写作
  * `<p class="katex-block"><span class="katex-display">…</span></p>`），升级为块级 math，
@@ -401,7 +437,9 @@ function walkList(
     // 新的一项开始：walkListItem 一定会先产出本层的 list-item（ensureFirstEmitted 兜底），
     // Word 见到本层编号递增就会重启下层计数，于是这一项里的首个子列表可以重新复用本 reference
     frame.childListReused = false
-    out.push(...walkListItem(child, frame, ctx, newStack, baseStyle))
+    const blocks = walkListItem(child, frame, ctx, newStack, baseStyle)
+    attachAnchor(child, blocks, ctx)
+    out.push(...blocks)
   }
   return out
 }
@@ -647,7 +685,7 @@ function collectColWeights(node: ParsedElement): number[] | undefined {
  * 畸形表会低估。这与 docx 库自身推断网格的口径同源，且低估只会导致列宽被丢弃（走 undefined
  * 分支），不会写出错位的表格。
  */
-function gridColumnCount(rows: TableRow[]): number {
+export function gridColumnCount(rows: TableRow[]): number {
   let max = 0
   for (const row of rows) {
     let count = 0

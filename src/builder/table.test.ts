@@ -19,6 +19,18 @@ function getGridCols(xml: string): number[] {
   return [...grid[1]!.matchAll(/<w:gridCol\s+w:w="(\d+)"\s*\/>/g)].map((m) => parseInt(m[1]!, 10))
 }
 
+/** 按出现顺序抽出所有 <w:tblGrid> 的 gridCol（外层表格先于其内嵌套表格出现） */
+function getAllGrids(xml: string): number[][] {
+  return [...xml.matchAll(/<w:tblGrid>([\s\S]*?)<\/w:tblGrid>/g)].map((g) =>
+    [...g[1]!.matchAll(/<w:gridCol\s+w:w="(\d+)"\s*\/>/g)].map((m) => parseInt(m[1]!, 10)),
+  )
+}
+
+const sum = (xs: number[]): number => xs.reduce((a, b) => a + b, 0)
+
+/** 默认单元格左右内边距之和（twip）：DEFAULT_OPTIONS.tableCellMargin 左右各 5pt = 100 twip */
+const DEFAULT_CELL_MARGIN_X = 200
+
 /** 抽出 <w:tblW> 的 type / w 属性 */
 function getTblW(xml: string): { type: string; w: string } {
   const m = /<w:tblW\s+w:type="([^"]*)"\s+w:w="([^"]*)"\s*\/>/.exec(xml)
@@ -185,22 +197,23 @@ describe('builder XML - 表格列宽（colgroup → tblGrid）', () => {
     expect(getTblW(xml)).toEqual({ type: 'dxa', w: String(expected) })
   })
 
-  it('表格单元格内的列表缩进表格仍走 auto：可用宽度是父单元格而非版心', async () => {
+  it('表格单元格内的列表缩进表格：dxa 宽按「单元格内容宽 − 缩进」计算，不按版心撑破单元格', async () => {
     const xml = await getDocumentXml(
       '<table><tr><td><ul><li>x<table><tr><td>a</td><td>b</td></tr></table></li></ul></td></tr></table>',
     )
     const widths = [...xml.matchAll(/<w:tblW\s+w:type="([^"]*)"\s+w:w="([^"]*)"\s*\/>/g)].map(
       (m) => ({ type: m[1], w: m[2] }),
     )
-    // 外层表满宽 pct，内层缩进表 auto（不能用版心宽度撑破父单元格）
+    // 外层单列满宽：单元格内容宽 = 版心 − 默认左右内边距（各 5pt = 100 twip）
+    const cellContent = pageContentWidthTwip({}) - DEFAULT_CELL_MARGIN_X
     expect(widths).toEqual([
       { type: 'pct', w: '5000' },
-      { type: 'auto', w: '0' },
+      { type: 'dxa', w: String(cellContent - 720) },
     ])
   })
 
-  it('离开单元格后深度计数复位：表格之后的列表缩进表格仍按版心写 dxa 宽', async () => {
-    // 防回归：若 cellDepth 只增不减，表格之后所有列表内表格都会被误判为「在单元格内」退回 auto
+  it('离开单元格后宽度栈复位：表格之后的列表缩进表格仍按版心写 dxa 宽', async () => {
+    // 防回归：若单元格内容宽度只压栈不出栈，表格之后的列表表格会按某个单元格的宽度计算
     const xml = await getDocumentXml(
       '<table><tr><td>a</td></tr><tr><td>b</td></tr></table>' +
         '<ul><li>x<table><tr><td>c</td></tr></table></li></ul>',
@@ -209,6 +222,54 @@ describe('builder XML - 表格列宽（colgroup → tblGrid）', () => {
       (m) => m[1],
     )
     expect(widths).toEqual(['pct', 'dxa'])
+  })
+})
+
+describe('builder XML - 单元格内嵌套表格按父单元格宽度排版', () => {
+  // 防回归：此前嵌套表格的 colgroup 网格按整个版心换算并锁定固定布局，Word 里会撑破外层单元格
+  const COLGROUP_1_3 = '<colgroup><col style="width: 25%"><col style="width: 75%"></colgroup>'
+  const INNER = `<table>${COLGROUP_1_3}<tr><td>a</td><td>b</td></tr></table>`
+
+  it('外层两列等分：内层 colgroup 网格合计 = 外层单元格宽 − 左右内边距，比例保留', async () => {
+    const xml = await getDocumentXml(`<table><tr><td>左</td><td>${INNER}</td></tr></table>`)
+    const [outer, inner] = getAllGrids(xml)
+    expect(outer).toHaveLength(2)
+    expect(sum(inner!)).toBe(Math.round(pageContentWidthTwip({}) / 2 - DEFAULT_CELL_MARGIN_X))
+    expect(inner![1]! / inner![0]!).toBeCloseTo(3, 2)
+  })
+
+  it('外层有 colgroup：内层按所在列的实际宽度计算', async () => {
+    const xml = await getDocumentXml(
+      `<table>${COLGROUP_1_3}<tr><td>窄</td><td>${INNER}</td></tr></table>`,
+    )
+    const [outer, inner] = getAllGrids(xml)
+    expect(sum(inner!)).toBe(outer![1]! - DEFAULT_CELL_MARGIN_X)
+  })
+
+  it('跨列单元格：内层按所跨各列的总宽计算', async () => {
+    const xml = await getDocumentXml(
+      `<table><tr><td colspan="2">${INNER}</td></tr><tr><td>a</td><td>b</td></tr></table>`,
+    )
+    const [, inner] = getAllGrids(xml)
+    expect(sum(inner!)).toBe(pageContentWidthTwip({}) - DEFAULT_CELL_MARGIN_X)
+  })
+
+  it('cellpadding 覆盖内边距时，内层宽度扣除的是实际内边距', async () => {
+    // cellpadding="10"：10px × 15 = 150 twip，左右合计 300
+    const xml = await getDocumentXml(`<table cellpadding="10"><tr><td>${INNER}</td></tr></table>`)
+    const [, inner] = getAllGrids(xml)
+    expect(sum(inner!)).toBe(pageContentWidthTwip({}) - 300)
+  })
+
+  it('两层嵌套：每一层都以上一层单元格的内容宽度为准', async () => {
+    const xml = await getDocumentXml(
+      `<table><tr><td>a</td><td><table><tr><td>b</td><td>${INNER}</td></tr></table></td></tr></table>`,
+    )
+    const [, middle, inner] = getAllGrids(xml)
+    // 中间层无 colgroup，由 docx 按其所在单元格推导网格；最内层按中间层右列的内容宽度计算
+    expect(middle).toHaveLength(2)
+    const middleCell = Math.round(pageContentWidthTwip({}) / 2 - DEFAULT_CELL_MARGIN_X)
+    expect(sum(inner!)).toBe(Math.round(middleCell / 2 - DEFAULT_CELL_MARGIN_X))
   })
 })
 

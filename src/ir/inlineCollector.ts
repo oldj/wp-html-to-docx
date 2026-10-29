@@ -193,10 +193,8 @@ function applyTagStyle(tag: string, base: InlineStyle, el: ParsedElement): Inlin
       style = { ...style, superScript: true }
       break
     case 'a': {
-      const href = getAttr(el, 'href')
-      // 协议白名单：仅放行 http(s)/mailto/tel/ftp 与锚点/相对路径；
-      // 拦下 javascript: / data: 等，避免不可信 HTML 把脚本/数据 URL 写进 docx 链接
-      if (href && isSafeHref(href)) style = { ...style, link: href }
+      const link = normalizeHref(getAttr(el, 'href'))
+      if (link !== undefined) style = { ...style, link }
       break
     }
     // span / mark 等：仅透传，由 inline style 决定外观
@@ -272,19 +270,20 @@ function findFragmentAnchor(el: ParsedElement): string | undefined {
 }
 
 /**
- * href 协议白名单。放行：
- * - http / https / mailto / tel / ftp
- * - 锚点（#xxx）、相对路径（/foo、./foo、?q=x）
- * 拦下：javascript:、data: 等可能携带脚本/任意载荷的协议。
+ * 把 `<a href>` 归一为可写进 docx 的链接目标，无法安全或有意义地落到 Word 时返回 undefined（只保留文字）：
+ * - http / https / mailto / tel / ftp（大小写不敏感）：原样保留
+ * - `//host/path`（协议相对）：补成 `https://host/path`
+ * - `#id`：保留，渲染期按 ctx.anchors 转成文档内链接（目标不存在时同样只保留文字）
+ * - 相对路径（`/foo`、`./foo`、`../foo`、`?q=1`、`page.html`）：docx 脱离了原网站，
+ *   Word 会把它解析为相对文档所在位置，点开必然失败，故去掉链接
+ * - javascript: / data: 等：避免不可信 HTML 把脚本 / 数据 URL 写进 docx，去掉链接
  */
-function isSafeHref(href: string): boolean {
-  const trimmed = href.trim()
-  if (trimmed.length === 0) return false
-  // 锚点 / 路径相对 / 查询相对：无协议前缀，安全
-  if (/^[#/?]/.test(trimmed)) return true
-  if (trimmed.startsWith('./') || trimmed.startsWith('../')) return true
-  // 协议白名单（大小写不敏感）；其他形如 `javascript:` / `data:` 一律拒绝
-  return /^(https?|mailto|tel|ftp):/i.test(trimmed)
+function normalizeHref(href: string | undefined): string | undefined {
+  const trimmed = href?.trim() ?? ''
+  if (trimmed.length === 0) return undefined
+  if (trimmed.startsWith('#')) return trimmed.length > 1 ? trimmed : undefined
+  if (trimmed.startsWith('//')) return `https:${trimmed}`
+  return /^(https?|mailto|tel|ftp):/i.test(trimmed) ? trimmed : undefined
 }
 
 /**

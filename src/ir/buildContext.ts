@@ -51,11 +51,14 @@ export class BuildContext {
   /** 锚点 id（如 'fn-1'）→ 脚注编号 + 内容；buildIr 阶段由 collectFootnoteDefs 预扫描填充。
    * 正文引用在渲染层据此解析数字 id，buildDocument 据此注入 Document.footnotes。 */
   footnotes = new Map<string, FootnoteEntry>()
-  /** builder 阶段：当前所处表格单元格的嵌套深度（由 tables.ts 维护）。
-   * 大于 0 时表格的可用宽度是父单元格而非版心，按版心算的绝对宽度不再可靠。 */
-  cellDepth = 0
+  /** builder 阶段：外层表格单元格可容纳内容的宽度（twip）栈，由 tables.ts 维护。
+   * 栈顶即当前所在单元格的内容宽度，单元格里的表格以它而非版心为可用宽度；空栈表示不在表格内。 */
+  cellContentWidths: number[] = []
+  /** HTML id → Word 书签名；buildIr 阶段由带 id 的元素注册，渲染期据此把 `#id` 链接转成文档内链接 */
+  anchors = new Map<string, string>()
   private listSeq = 0
   private footnoteSeq = 0
+  private anchorSeq = 0
   /** options.listLevels 解析后的层级方案，所有 reference 共用 */
   private readonly listScheme: ListLevelScheme
 
@@ -77,6 +80,19 @@ export class BuildContext {
       levels: listLevels(ordered, spec, this.listScheme),
     })
     return reference
+  }
+
+  /**
+   * 为 HTML id 注册一个 Word 书签名并返回；该 id 已注册过时返回 undefined（HTML 中 id 应唯一，重复时以首个为准）。
+   * 书签名不直接用 id：Word 书签名只允许字母、数字、下划线且不超过 40 字符，HTML id 常含 `-`、中文等。
+   * 以 `_` 开头的书签在 Word 的书签列表中默认隐藏，不打扰用户自己的书签。
+   */
+  registerAnchor(id: string): string | undefined {
+    if (this.anchors.has(id)) return undefined
+    this.anchorSeq += 1
+    const name = `_wp_anchor_${this.anchorSeq}`
+    this.anchors.set(id, name)
+    return name
   }
 
   /**

@@ -140,14 +140,32 @@ describe('buildIr - 链接与换行', () => {
     expect(block.inlines[0]?.style?.link).toBeUndefined()
   })
 
-  it('href 锚点 / 相对路径 / mailto / tel 都放行', () => {
-    const cases = ['#sec', '/path', './rel', '../up', '?q=1', 'mailto:a@b.com', 'tel:123']
+  it('href 锚点 / mailto / tel / 绝对 URL 放行', () => {
+    const cases = ['#sec', 'mailto:a@b.com', 'tel:123', 'https://a.com/x', 'FTP://a.com']
     for (const href of cases) {
       const block = ir(`<p><a href="${href}">x</a></p>`)[0] as {
         inlines: { style?: { link?: string } }[]
       }
       expect(block.inlines[0]?.style?.link).toBe(href)
     }
+  })
+
+  it('相对路径去掉链接、保留文字：docx 脱离原网站后 Word 无法解析它们', () => {
+    const cases = ['/path', './rel', '../up', '?q=1', 'page.html', '#', '   ']
+    for (const href of cases) {
+      const block = ir(`<p><a href="${href}">x</a></p>`)[0] as {
+        inlines: { text?: string; style?: { link?: string } }[]
+      }
+      expect(block.inlines[0]?.text).toBe('x')
+      expect(block.inlines[0]?.style?.link).toBeUndefined()
+    }
+  })
+
+  it('协议相对 URL（//host）补成 https', () => {
+    const block = ir('<p><a href="//cdn.example.com/a.png">x</a></p>')[0] as {
+      inlines: { style?: { link?: string } }[]
+    }
+    expect(block.inlines[0]?.style?.link).toBe('https://cdn.example.com/a.png')
   })
 
   it('br 产生 break inline', () => {
