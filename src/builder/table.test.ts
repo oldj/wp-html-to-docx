@@ -158,7 +158,7 @@ describe('builder XML - 表格列宽（colgroup → tblGrid）', () => {
     )
   })
 
-  it('list 内的缩进表格：网格按「版心 − 缩进」分配，表宽走 auto 不再溢出', async () => {
+  it('list 内的缩进表格：网格按「版心 − 缩进」分配，表宽写成等于网格合计的 dxa，不再溢出', async () => {
     const xml = await getDocumentXml(
       '<ul><li>x<table><colgroup><col style="width: 25%"><col style="width: 75%"></colgroup><tr><td>a</td><td>b</td></tr></table></li></ul>',
     )
@@ -167,7 +167,7 @@ describe('builder XML - 表格列宽（colgroup → tblGrid）', () => {
     const cols = getGridCols(xml)
     expect(cols.reduce((a, b) => a + b, 0)).toBe(pageContentWidthTwip({}) - indent)
     expect(cols[1]! / cols[0]!).toBeCloseTo(3, 2)
-    expect(getTblW(xml)).toEqual({ type: 'auto', w: '0' })
+    expect(getTblW(xml)).toEqual({ type: 'dxa', w: String(pageContentWidthTwip({}) - indent) })
   })
 
   it('list 内无 colgroup 的缩进表格：tblW 与网格合计都是「版心 − 缩进」，不按整版心推网格', async () => {
@@ -266,10 +266,40 @@ describe('builder XML - 单元格内嵌套表格按父单元格宽度排版', ()
       `<table><tr><td>a</td><td><table><tr><td>b</td><td>${INNER}</td></tr></table></td></tr></table>`,
     )
     const [, middle, inner] = getAllGrids(xml)
-    // 中间层无 colgroup，由 docx 按其所在单元格推导网格；最内层按中间层右列的内容宽度计算
-    expect(middle).toHaveLength(2)
+    // 中间层无 colgroup：网格按外层单元格的内容宽度等分（docx 逐列取整，合计可能差 1）
     const middleCell = Math.round(pageContentWidthTwip({}) / 2 - DEFAULT_CELL_MARGIN_X)
+    expect(middle).toHaveLength(2)
+    expect(Math.abs(sum(middle!) - middleCell)).toBeLessThanOrEqual(1)
     expect(sum(inner!)).toBe(Math.round(middleCell / 2 - DEFAULT_CELL_MARGIN_X))
+  })
+
+  it('无 colgroup 的嵌套表格：表宽写成单元格内容宽的 dxa，网格不再比单元格内容区宽出内边距', async () => {
+    // 防回归：此前写 pct 100%，docx 按外层整列宽（未扣内边距）推导网格，Pages / LibreOffice 中越界
+    const xml = await getDocumentXml(
+      '<table><tr><td>左</td><td><table><tr><td>a</td><td>b</td></tr></table></td></tr></table>',
+    )
+    const cellContent = Math.round(pageContentWidthTwip({}) / 2 - DEFAULT_CELL_MARGIN_X)
+    const widths = [...xml.matchAll(/<w:tblW\s+w:type="([^"]*)"\s+w:w="([^"]*)"\s*\/>/g)].map(
+      (m) => ({ type: m[1], w: m[2] }),
+    )
+    expect(widths).toEqual([
+      { type: 'pct', w: '5000' },
+      { type: 'dxa', w: String(cellContent) },
+    ])
+    const [, inner] = getAllGrids(xml)
+    expect(Math.abs(sum(inner!) - cellContent)).toBeLessThanOrEqual(1)
+  })
+
+  it('有 colgroup 的嵌套表格：单元格宽（tcW）与网格一致，不被按外层整列宽放大', async () => {
+    // 防回归：此前 pct 100% 按外层整列宽解析，docx 把 tcW 按 4513/4313 等比放大，与网格矛盾
+    const xml = await getDocumentXml(`<table><tr><td>左</td><td>${INNER}</td></tr></table>`)
+    const [, inner] = getAllGrids(xml)
+    const innerTable = xml.slice(xml.indexOf('<w:tbl>', xml.indexOf('<w:tbl>') + 1))
+    const firstRow = innerTable.slice(innerTable.indexOf('<w:tr'), innerTable.indexOf('</w:tr>'))
+    const tcW = [...firstRow.matchAll(/<w:tcW\s+w:type="dxa"\s+w:w="(\d+)"/g)].map((m) =>
+      parseInt(m[1]!, 10),
+    )
+    expect(tcW).toEqual(inner)
   })
 })
 

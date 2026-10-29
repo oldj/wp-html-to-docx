@@ -81,7 +81,12 @@ export function inlinesToRuns(inlines: Inline[], ctx: BuildContext): ParagraphCh
         })
         // <a href><img></a>：当 image inline 携带 link 时，套一层超链接，
         // 否则图片在 docx 中不可点击（IR 已正确写入 style.link，但 ImageRun 自身不消费）
-        out.push(wrapLink(imageRun, resolveLink(item.style.link, ctx)))
+        const link = resolveLink(item.style.link, ctx)
+        // FIXME: docx 9.15 把图片放进 InternalHyperlink 时，仍给图片写 <a:hlinkClick r:id="…">，
+        // 但文档内链接不登记任何关系，这个 r:id 在 document.xml.rels 里不存在，Word 打开时提示
+        // 「发现无法读取的内容」并要求修复。docx 修复前，指向文档内锚点的图片只输出图片、不加链接；
+        // 外部链接的图片不受影响（其关系会正常登记）。
+        out.push(link !== undefined && 'anchor' in link ? imageRun : wrapLink(imageRun, link))
         continue
       }
       // 未加载（resolver 未配 / 加载失败 / 策略 skip）

@@ -112,12 +112,32 @@ describe('文档内锚点链接', () => {
     expect(document).not.toContain('<w:hyperlink')
   })
 
-  it('图片链接到文档内锚点：图片包在文档内链接里', async () => {
+  it('图片链接到文档内锚点：只输出图片、不加链接（绕开 docx 写出悬空 hlinkClick 关系的 bug）', async () => {
+    // 防回归：docx 9.15 给 InternalHyperlink 里的图片写 <a:hlinkClick r:id>，而该关系并不存在，
+    // Word 打开时提示「发现无法读取的内容」
     const { document } = await unpack(
       `<h2 id="top">顶部</h2><p><a href="#top"><img src="${TINY_PNG_DATA_URL}"></a></p>`,
     )
-    const link = /<w:hyperlink\b[^>]*\bw:anchor=[\s\S]*?<\/w:hyperlink>/.exec(document)?.[0] ?? ''
+    expect(document).toContain('<w:drawing>')
+    expect(document).not.toContain('<w:hyperlink')
+    expect(document).not.toContain('hlinkClick')
+  })
+
+  it('同一段里的文字锚点链接不受影响，仍是文档内链接', async () => {
+    const { document } = await unpack(
+      `<h2 id="top">顶部</h2><p><a href="#top">回顶部 <img src="${TINY_PNG_DATA_URL}"></a></p>`,
+    )
+    expect(internalLinks(document)).toEqual(bookmarks(document))
+    expect(document).not.toContain('hlinkClick')
+  })
+
+  it('图片链接到外部地址：仍包在外部链接里，图片可点击', async () => {
+    const { document, rels } = await unpack(
+      `<p><a href="https://example.com"><img src="${TINY_PNG_DATA_URL}"></a></p>`,
+    )
+    const link = /<w:hyperlink\b[^>]*\br:id=[\s\S]*?<\/w:hyperlink>/.exec(document)?.[0] ?? ''
     expect(link).toContain('<w:drawing>')
+    expect(rels).toContain('Target="https://example.com"')
   })
 })
 

@@ -87,7 +87,7 @@ export function buildTable(rows: IRRow[], ctx: BuildContext, layout: TableLayout
   // 否则按列数等分 —— 与 docx 为无网格表格推导 tblGrid 的口径一致
   const columns = grid ?? equalColumns(tableTwip, gridColumnCount(rows))
   const builtRows = rows.map((row) => buildRow(row, ctx, columns, margins))
-  const width = resolveTableWidth(widthPct, indent, grid !== undefined, tableTwip)
+  const width = resolveTableWidth(widthPct, indent, tableTwip, ctx.cellContentWidths.length > 0)
 
   const opts: ITableOptions = {
     rows: builtRows,
@@ -123,27 +123,28 @@ function equalColumns(tableTwip: number, count: number): number[] {
 }
 
 /**
- * 表宽（`tblW`）：
- * - 未缩进：百分比，默认 100% 占满文本列。
- * - 列表内的缩进表格：`tblInd` + 100% 会右溢出，改写绝对宽度「(可用宽度 − 缩进) × 百分比」。
- *   不能留 auto —— docx 会按整个可用宽度推导 `tblGrid`，Word 按内容自适应看不出问题，
- *   但 Google Docs / Pages / LibreOffice 以网格为准，表格会溢出右边距一个缩进量。
- *   写成 dxa 后 docx 按这个宽度等分网格，且不写 `tcW`，Word 仍可在该宽度内自适应列宽。
- * - 已有显式网格时用 auto：宽度已由 gridCol 的绝对值定死。
+ * 表宽（`tblW`）：只有顶层（不在表格单元格内）且未缩进的表格用百分比（默认 100%，占满文本列），
+ * 其余一律写绝对宽度 tableTwip，即「(可用宽度 − 缩进) × 表宽百分比」，与 gridCol 合计相等。
  *
- * 可用宽度在表格单元格内是该单元格的内容宽度（见 availableWidthTwip），所以单元格里的列表表格
- * 同样拿到准确的绝对宽度，不会按版心撑破单元格。
+ * 为什么不能沿用百分比 / auto：docx 推导网格、回填单元格宽度时，把这两种宽度都按「整个版心」
+ * 或「外层单元格的整列宽」解析，既不扣列表缩进，也不扣外层单元格的左右内边距。于是
+ * - 列表内表格：网格按整个版心等分，加上 tblInd 后溢出右边距一个缩进量；
+ * - 单元格内无 colgroup 的表格：网格按外层整列宽推导，比单元格内容区宽出左右内边距；
+ * - 单元格内有 colgroup 的表格：网格正确，但 docx 把单元格宽（tcW）按外层整列宽等比放大，与网格矛盾。
+ * Word 按内容区解析百分比，多半看不出问题；Google Docs / Pages / LibreOffice 以网格为准，会越界。
+ * 写成绝对宽度后 docx 直接按它推导网格、不再放大单元格宽；没有 colgroup 时也不写 tcW，
+ * Word 仍可在该宽度内按内容调整列宽。
  *
  * @param tableTwip 表格实际宽度（twip），见 tableWidthTwip
+ * @param inCell 是否位于表格单元格内（此时可用宽度是该单元格的内容宽度，见 availableWidthTwip）
  */
 function resolveTableWidth(
   widthPct: number | undefined,
   indent: number,
-  hasGrid: boolean,
   tableTwip: number,
+  inCell: boolean,
 ): ITableWidthProperties {
-  if (indent === 0) return { size: widthPct ?? 100, type: WidthType.PERCENTAGE }
-  if (hasGrid) return { size: 0, type: WidthType.AUTO }
+  if (indent === 0 && !inCell) return { size: widthPct ?? 100, type: WidthType.PERCENTAGE }
   return { size: tableTwip, type: WidthType.DXA }
 }
 
