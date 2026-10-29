@@ -174,7 +174,7 @@ console.log(VERSION) // 直接读取
 
 await htmlToDocx(html, {
   logger: (_level, msg) => console.log(msg),
-}) // 控制台会出现：wp-html-to-docx v0.2.0
+}) // 控制台会出现：wp-html-to-docx v0.3.0
 ```
 
 适合排查包管理器命中了缓存里的旧版、`npm link` 后忘了 `npm run build` 等情况。
