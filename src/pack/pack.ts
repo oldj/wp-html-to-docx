@@ -3,7 +3,7 @@
 import { Document, Packer } from 'docx'
 import { zipSync, type Zippable } from 'fflate'
 
-// 本身已压缩的图片格式：再做一遍 DEFLATE 几乎不缩小体积，却是打包里最耗时的一步。
+// 本身已压缩的图片格式：再做一遍 DEFLATE 通常只能缩小 1%～3%，却是打包里最耗时的一步。
 // bmp 等未压缩格式不在此列，仍走默认压缩。
 const PRECOMPRESSED_MEDIA = /^word\/media\/[^/]+\.(?:jpe?g|png|gif)$/i
 
@@ -30,7 +30,8 @@ function toBytes(data: PackageData): Uint8Array {
  *
  * 与 `Packer.toArrayBuffer` 的区别只在压缩级别：jpg / png / gif 图片以 STORE（级别 0）存入，
  * 其余文件仍用默认的 DEFLATE。实测（2026-10-28，Node，100 万字 + 50 张 300 KB 图片）打包耗时
- * 540 ms → 228 ms，体积几乎不变；手机 WebView 上打包是整次导出里最慢的一段，省下的时间更可观。
+ * 540 ms → 228 ms；代价是图片不再压缩，产物体积略增 1%～3%（真实照片，2026-10-29 实测）。
+ * 手机 WebView 上打包是整次导出里最慢的一段，省下的时间更可观。
  */
 export async function pack(doc: Document): Promise<Uint8Array> {
   const files = compileFiles(doc)
