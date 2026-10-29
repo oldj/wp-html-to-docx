@@ -19,6 +19,18 @@ function getGridCols(xml: string): number[] {
   return [...grid[1]!.matchAll(/<w:gridCol\s+w:w="(\d+)"\s*\/>/g)].map((m) => parseInt(m[1]!, 10))
 }
 
+/** 按出现顺序抽出所有 <w:tblGrid> 的 gridCol（外层表格先于其内嵌套表格出现） */
+function getAllGrids(xml: string): number[][] {
+  return [...xml.matchAll(/<w:tblGrid>([\s\S]*?)<\/w:tblGrid>/g)].map((g) =>
+    [...g[1]!.matchAll(/<w:gridCol\s+w:w="(\d+)"\s*\/>/g)].map((m) => parseInt(m[1]!, 10)),
+  )
+}
+
+const sum = (xs: number[]): number => xs.reduce((a, b) => a + b, 0)
+
+/** 默认单元格左右内边距之和（twip）：DEFAULT_OPTIONS.tableCellMargin 左右各 5pt = 100 twip */
+const DEFAULT_CELL_MARGIN_X = 200
+
 /** 抽出 <w:tblW> 的 type / w 属性 */
 function getTblW(xml: string): { type: string; w: string } {
   const m = /<w:tblW\s+w:type="([^"]*)"\s+w:w="([^"]*)"\s*\/>/.exec(xml)
@@ -146,7 +158,7 @@ describe('builder XML - 表格列宽（colgroup → tblGrid）', () => {
     )
   })
 
-  it('list 内的缩进表格：网格按「版心 − 缩进」分配，表宽走 auto 不再溢出', async () => {
+  it('list 内的缩进表格：网格按「版心 − 缩进」分配，表宽写成等于网格合计的 dxa，不再溢出', async () => {
     const xml = await getDocumentXml(
       '<ul><li>x<table><colgroup><col style="width: 25%"><col style="width: 75%"></colgroup><tr><td>a</td><td>b</td></tr></table></li></ul>',
     )
@@ -155,7 +167,139 @@ describe('builder XML - 表格列宽（colgroup → tblGrid）', () => {
     const cols = getGridCols(xml)
     expect(cols.reduce((a, b) => a + b, 0)).toBe(pageContentWidthTwip({}) - indent)
     expect(cols[1]! / cols[0]!).toBeCloseTo(3, 2)
-    expect(getTblW(xml)).toEqual({ type: 'auto', w: '0' })
+    expect(getTblW(xml)).toEqual({ type: 'dxa', w: String(pageContentWidthTwip({}) - indent) })
+  })
+
+  it('list 内无 colgroup 的缩进表格：tblW 与网格合计都是「版心 − 缩进」，不按整版心推网格', async () => {
+    // 防回归：docx 9.15 起 auto 宽表格按整个版心等分 gridCol，叠加 tblInd 后
+    // Google Docs / Pages / LibreOffice（以网格为准）里表格会溢出右边距一个缩进量
+    const xml = await getDocumentXml(
+      '<ul><li>x<table><tr><td>a</td><td>b</td></tr></table></li></ul>',
+    )
+    const indent = parseInt(/<w:tblInd\s+w:type="dxa"\s+w:w="(\d+)"/.exec(xml)![1]!, 10)
+    const expected = pageContentWidthTwip({}) - indent
+    expect(getTblW(xml)).toEqual({ type: 'dxa', w: String(expected) })
+    const cols = getGridCols(xml)
+    expect(cols).toHaveLength(2)
+    expect(cols.reduce((a, b) => a + b, 0)).toBeLessThanOrEqual(expected)
+    expect(cols.reduce((a, b) => a + b, 0)).toBeGreaterThan(expected - cols.length)
+    // 没有显式列宽：不写 tcW、不锁固定布局，Word 仍可在该宽度内按内容自适应
+    expect(xml).not.toContain('<w:tcW')
+    expect(xml).not.toContain('<w:tblLayout')
+  })
+
+  it('list 内缩进表格的百分比表宽按「版心 − 缩进」折算', async () => {
+    const xml = await getDocumentXml(
+      '<ul><li>x<table style="width: 50%"><tr><td>a</td><td>b</td></tr></table></li></ul>',
+    )
+    const indent = parseInt(/<w:tblInd\s+w:type="dxa"\s+w:w="(\d+)"/.exec(xml)![1]!, 10)
+    const expected = Math.round((pageContentWidthTwip({}) - indent) / 2)
+    expect(getTblW(xml)).toEqual({ type: 'dxa', w: String(expected) })
+  })
+
+  it('表格单元格内的列表缩进表格：dxa 宽按「单元格内容宽 − 缩进」计算，不按版心撑破单元格', async () => {
+    const xml = await getDocumentXml(
+      '<table><tr><td><ul><li>x<table><tr><td>a</td><td>b</td></tr></table></li></ul></td></tr></table>',
+    )
+    const widths = [...xml.matchAll(/<w:tblW\s+w:type="([^"]*)"\s+w:w="([^"]*)"\s*\/>/g)].map(
+      (m) => ({ type: m[1], w: m[2] }),
+    )
+    // 外层单列满宽：单元格内容宽 = 版心 − 默认左右内边距（各 5pt = 100 twip）
+    const cellContent = pageContentWidthTwip({}) - DEFAULT_CELL_MARGIN_X
+    expect(widths).toEqual([
+      { type: 'pct', w: '5000' },
+      { type: 'dxa', w: String(cellContent - 720) },
+    ])
+  })
+
+  it('离开单元格后宽度栈复位：表格之后的列表缩进表格仍按版心写 dxa 宽', async () => {
+    // 防回归：若单元格内容宽度只压栈不出栈，表格之后的列表表格会按某个单元格的宽度计算
+    const xml = await getDocumentXml(
+      '<table><tr><td>a</td></tr><tr><td>b</td></tr></table>' +
+        '<ul><li>x<table><tr><td>c</td></tr></table></li></ul>',
+    )
+    const widths = [...xml.matchAll(/<w:tblW\s+w:type="([^"]*)"\s+w:w="([^"]*)"\s*\/>/g)].map(
+      (m) => m[1],
+    )
+    expect(widths).toEqual(['pct', 'dxa'])
+  })
+})
+
+describe('builder XML - 单元格内嵌套表格按父单元格宽度排版', () => {
+  // 防回归：此前嵌套表格的 colgroup 网格按整个版心换算并锁定固定布局，Word 里会撑破外层单元格
+  const COLGROUP_1_3 = '<colgroup><col style="width: 25%"><col style="width: 75%"></colgroup>'
+  const INNER = `<table>${COLGROUP_1_3}<tr><td>a</td><td>b</td></tr></table>`
+
+  it('外层两列等分：内层 colgroup 网格合计 = 外层单元格宽 − 左右内边距，比例保留', async () => {
+    const xml = await getDocumentXml(`<table><tr><td>左</td><td>${INNER}</td></tr></table>`)
+    const [outer, inner] = getAllGrids(xml)
+    expect(outer).toHaveLength(2)
+    expect(sum(inner!)).toBe(Math.round(pageContentWidthTwip({}) / 2 - DEFAULT_CELL_MARGIN_X))
+    expect(inner![1]! / inner![0]!).toBeCloseTo(3, 2)
+  })
+
+  it('外层有 colgroup：内层按所在列的实际宽度计算', async () => {
+    const xml = await getDocumentXml(
+      `<table>${COLGROUP_1_3}<tr><td>窄</td><td>${INNER}</td></tr></table>`,
+    )
+    const [outer, inner] = getAllGrids(xml)
+    expect(sum(inner!)).toBe(outer![1]! - DEFAULT_CELL_MARGIN_X)
+  })
+
+  it('跨列单元格：内层按所跨各列的总宽计算', async () => {
+    const xml = await getDocumentXml(
+      `<table><tr><td colspan="2">${INNER}</td></tr><tr><td>a</td><td>b</td></tr></table>`,
+    )
+    const [, inner] = getAllGrids(xml)
+    expect(sum(inner!)).toBe(pageContentWidthTwip({}) - DEFAULT_CELL_MARGIN_X)
+  })
+
+  it('cellpadding 覆盖内边距时，内层宽度扣除的是实际内边距', async () => {
+    // cellpadding="10"：10px × 15 = 150 twip，左右合计 300
+    const xml = await getDocumentXml(`<table cellpadding="10"><tr><td>${INNER}</td></tr></table>`)
+    const [, inner] = getAllGrids(xml)
+    expect(sum(inner!)).toBe(pageContentWidthTwip({}) - 300)
+  })
+
+  it('两层嵌套：每一层都以上一层单元格的内容宽度为准', async () => {
+    const xml = await getDocumentXml(
+      `<table><tr><td>a</td><td><table><tr><td>b</td><td>${INNER}</td></tr></table></td></tr></table>`,
+    )
+    const [, middle, inner] = getAllGrids(xml)
+    // 中间层无 colgroup：网格按外层单元格的内容宽度等分（docx 逐列取整，合计可能差 1）
+    const middleCell = Math.round(pageContentWidthTwip({}) / 2 - DEFAULT_CELL_MARGIN_X)
+    expect(middle).toHaveLength(2)
+    expect(Math.abs(sum(middle!) - middleCell)).toBeLessThanOrEqual(1)
+    expect(sum(inner!)).toBe(Math.round(middleCell / 2 - DEFAULT_CELL_MARGIN_X))
+  })
+
+  it('无 colgroup 的嵌套表格：表宽写成单元格内容宽的 dxa，网格不再比单元格内容区宽出内边距', async () => {
+    // 防回归：此前写 pct 100%，docx 按外层整列宽（未扣内边距）推导网格，Pages / LibreOffice 中越界
+    const xml = await getDocumentXml(
+      '<table><tr><td>左</td><td><table><tr><td>a</td><td>b</td></tr></table></td></tr></table>',
+    )
+    const cellContent = Math.round(pageContentWidthTwip({}) / 2 - DEFAULT_CELL_MARGIN_X)
+    const widths = [...xml.matchAll(/<w:tblW\s+w:type="([^"]*)"\s+w:w="([^"]*)"\s*\/>/g)].map(
+      (m) => ({ type: m[1], w: m[2] }),
+    )
+    expect(widths).toEqual([
+      { type: 'pct', w: '5000' },
+      { type: 'dxa', w: String(cellContent) },
+    ])
+    const [, inner] = getAllGrids(xml)
+    expect(Math.abs(sum(inner!) - cellContent)).toBeLessThanOrEqual(1)
+  })
+
+  it('有 colgroup 的嵌套表格：单元格宽（tcW）与网格一致，不被按外层整列宽放大', async () => {
+    // 防回归：此前 pct 100% 按外层整列宽解析，docx 把 tcW 按 4513/4313 等比放大，与网格矛盾
+    const xml = await getDocumentXml(`<table><tr><td>左</td><td>${INNER}</td></tr></table>`)
+    const [, inner] = getAllGrids(xml)
+    const innerTable = xml.slice(xml.indexOf('<w:tbl>', xml.indexOf('<w:tbl>') + 1))
+    const firstRow = innerTable.slice(innerTable.indexOf('<w:tr'), innerTable.indexOf('</w:tr>'))
+    const tcW = [...firstRow.matchAll(/<w:tcW\s+w:type="dxa"\s+w:w="(\d+)"/g)].map((m) =>
+      parseInt(m[1]!, 10),
+    )
+    expect(tcW).toEqual(inner)
   })
 })
 

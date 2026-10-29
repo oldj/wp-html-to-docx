@@ -239,10 +239,14 @@ await htmlToDocx(html, {
 - HTML 空白默认折叠为单空格；`<pre>` 内保留所有空白与换行
 - 设 `preserveWhitespace: true` 后，连续的半角/全角空格、NBSP 等保留原样；含换行/Tab 的空白仍折叠为单空格
 - HTML 实体（`&amp;` `&lt;` `&nbsp;` `&#x4e2d;` 等）自动解码
-- `<a>` 与内联格式可任意组合（如 `<a><strong>x</strong></a>`）
+- `<a>` 与内联格式可任意组合（如 `<a><strong>x</strong></a>`）；链接文字使用 Word 内置的「超链接」样式（蓝色 + 下划线），显式 `color` 等内联样式优先
+- `<a href>` 按目标分三类处理：
+  - `http(s):` / `mailto:` / `tel:` / `ftp:`：外部链接；协议相对的 `//host/…` 补成 `https://host/…`
+  - `#id`：指向文档内带该 `id` 的元素时，生成 Word 书签与文档内链接，点击即跳转（`id` 可含中文、`-` 等，书签名由库生成；百分号编码的锚点也能匹配）。书签挂在该元素产出的第一个段落上，元素不产出段落（如 `<pre>`）或目标不存在时只保留文字。指向文档内锚点的**图片**暂不加链接（docx 9.15 会给这类图片写出悬空的关系引用，导致 Word 提示文档损坏）；图片的外部链接不受影响
+  - 相对路径（`/foo`、`./foo`、`page.html`、`?q=1`）与 `javascript:` / `data:` 等：只保留文字，不写链接。docx 脱离了原网站，相对路径在 Word 中无法打开
 - `<li>` 内含多个 `<p>`（或块级 + 裸文本）时，合并为单个列表项段落，段间以软换行 `<w:br/>` 分隔。这样**编号 / 项目符号只在首段出现一次**，后续段在同一项内自动换行并对齐到列表文本起点（等同 Word 里的 Shift+Enter）。OOXML 的 `<w:p>` 一旦带 numbering 引用就必然产生新编号，所以无法用"独立段落"语义来表达"同一编号下多行"——这是 Word 列表语义的固有约束
 - `<li>` 内的 `<table>` / `<pre>` / `<blockquote>` / `<hr>` 作为**独立块**输出，结构原样保留（表格的 `<tr>/<td>`、pre 的等宽与空白、blockquote 的左边线视觉等都不会被拍扁）。这些块会**跟随列表项的层级缩进**：
-  - `<table>`：注入 `<w:tblInd>` 与列表层级一致的左缩进；同时把 `tblW` 从 `pct 100%` 切到 `auto`，避免缩进 + 满宽导致表格右溢出页面边距。带 `<colgroup>` 时列宽按「版心 − 缩进」分配
+  - `<table>`：注入 `<w:tblInd>` 与列表层级一致的左缩进；表宽写成绝对值「(可用宽度 − 缩进) × 表宽百分比」，避免缩进 + 满宽导致表格右溢出页面边距（Google Docs / Pages / LibreOffice 以网格为准，尤其明显）。带 `<colgroup>` 时列宽同样按「可用宽度 − 缩进」分配
   - `<pre>` / `<hr>`：每个段落带相同的 `w:left` 缩进
   - `<blockquote>`：自带 720 缩进与外层 list 缩进**叠加**（嵌套缩进语义自洽，level 0 下最终为 1440）
   - 缩进值由 list 层级决定（每层 720 twip），等同 list-item 的文本起点位置，与浏览器渲染 `<li><table>` 的直觉一致
@@ -321,8 +325,8 @@ await htmlToDocx(html, {
 - 宽度取 `<col style="width: …">`，缺失时回退 HTML 遗留属性 `<col width="…">`。
 - **单位不限**：`%` / `px` / `pt` / `em` 都可以。列宽最终只用来算比例，同一张表内单位一致时结果与单位无关。
 - `<col span="N">` 按 HTML 语义展开为 N 个等宽列。
-- `gridCol` 的绝对值 = 版心宽度 × 该列占比（随 `page.size` / `page.margin` 变化），合计精确等于表宽。
-- 表宽取 `<table style="width: X%">` / `<table width="X%">` 写入 `<w:tblW w:type="pct">`；未声明或声明为绝对值时按 100% 满宽（本库历来的行为）。
+- `gridCol` 的绝对值 = 可用宽度 × 该列占比，合计精确等于表宽。可用宽度一般是版心宽度（随 `page.size` / `page.margin` 变化）；表格嵌在另一张表格的单元格里时，是该单元格扣掉左右内边距后的宽度，嵌套表格不会撑破外层单元格。
+- 表宽取 `<table style="width: X%">` / `<table width="X%">`；未声明或声明为绝对值时按 100% 满宽（本库历来的行为）。顶层表格写入 `<w:tblW w:type="pct">`；嵌在单元格里或列表里的表格写入按可用宽度算出的绝对值（dxa），因为百分比会被 docx 按未扣内边距 / 缩进的整列宽解析，在 Google Docs / Pages / LibreOffice 中越界。
 
 以下情况**放弃列宽**、退回 Word 等分（宁可丢比例也不写出错位的网格）：
 
@@ -421,28 +425,39 @@ class 列表中包含 `page-break` token 即触发（`<hr class="foo page-break 
 
 ### 启用方式
 
-数学转换依赖第三方包 [`mathml2omml`](https://www.npmjs.com/package/mathml2omml)（**LGPL-3.0-or-later**），作为 **optional peerDependency** 提供。需要数学公式时手动安装：
+公式按是否带 TeX 源码（`<annotation encoding="application/x-tex">`，KaTeX 默认输出就有）走不同的转换顺序，任一步失败都会退到下一步，不会让整个转换失败：
 
-```bash
-npm install mathml2omml
-```
+| 公式                                   | 第 1 步                        | 第 2 步                        | 都失败时                   |
+| -------------------------------------- | ------------------------------ | ------------------------------ | -------------------------- |
+| 带 TeX 源码（如 KaTeX）                | TeX → 公式（`latexToMath`）    | MathML → OMML（`mathml2omml`） | 文本 `$…$`（块级 `$$…$$`） |
+| 不带 TeX 源码（如 MathJax 3 默认输出） | MathML → OMML（`mathml2omml`） | —                              | 文本 `[math]`              |
 
-未安装时，`<math>` 会退回到 `[math]` 文本占位，并在首次出现时控制台 warn 一次（不会让整个转换失败）。
+- **TeX → 公式**：用 docx 自带的 `docx/math`（MIT），无需额外安装。带 TeX 源码时优先走它，是因为 KaTeX 的 MathML 里 ∫ / ∑ 与其作用对象是平级兄弟，`mathml2omml` 会转出空的运算符主体（Word 中显示为虚线占位框），矩阵、分段函数的括号也不会随内容伸缩；从 TeX 转能还原这些结构。**只用 KaTeX 的场景无需安装任何额外依赖**，也不会被提示安装 `mathml2omml`。
+- **MathML → OMML**：依赖第三方包 [`mathml2omml`](https://www.npmjs.com/package/mathml2omml)（**LGPL-3.0-or-later**），作为 **optional peerDependency** 提供。不带 TeX 源码的公式（如 MathJax 3 的默认输出）需要它，手动安装：
+
+  ```bash
+  npm install mathml2omml
+  ```
+
+- **文本占位**：`$…$` 让读者能看懂公式，Microsoft 365 的公式编辑器也能以 LaTeX 格式把它转回正式公式。
+
+告警：遇到没有 TeX 源码的公式而 `mathml2omml` 未安装时提示一次；TeX 无法解析时逐个告警。
 
 ### 行为细节
 
 - 默认按 HTML5 phrasing content 处理：`<math>...</math>` 是行内的，与前后文字共享段落
-- 升级到块级需要显式 `display="block"`：在 `<m:oMathPara>` 中独占一段
+- 升级到块级需要显式 `display="block"`：在 `<m:oMathPara>` 中独占一段。`display="block"` 的公式被包在段落里、且段落中没有其他文字时（如 KaTeX 的 `<p><span class="katex-display">…</span></p>`）同样独占一段
 - 同一段 MathML 在文档中重复出现时只转换一次（按字符串去重）
+- KaTeX 输出：只取 `.katex-mathml` 里的 MathML，跳过供浏览器排版的 `.katex-html`（否则会拍平成 `E=mc2` 这类乱字符）；KaTeX 的纯 HTML 输出（没有 MathML 副本）仍按文本保留
 
 ### 浏览器打包
 
-由于动态 `await import('mathml2omml')`，部分构建工具默认不会把 optional peer 打进 bundle。如果你的浏览器场景需要数学公式：
+`mathml2omml` 与 `docx/math`（约 77KB）都是动态 `await import(...)`，只在文档里确有公式需要时才加载，主包不会变大：
 
-- **Vite / Rollup**：直接 `npm install mathml2omml` 后即可，运行时被打入。
-- **Webpack**：可能需要在 `optimization.splitChunks` 或异步 chunk 配置里允许动态 import。
+- **`docx/math`** 随 `docx` 依赖一起安装，打包工具会把它拆成异步 chunk，无需额外配置。
+- **`mathml2omml`**：部分构建工具默认不会把 optional peer 打进 bundle。Vite / Rollup 直接 `npm install mathml2omml` 后即可；Webpack 可能需要在 `optimization.splitChunks` 或异步 chunk 配置里允许动态 import。
 
-不需要数学公式的浏览器场景可以放心忽略——动态 import 失败会被库内部捕获并退回占位。
+不需要数学公式的浏览器场景可以放心忽略——动态 import 失败会被库内部捕获并退回下一级。
 
 ## 脚注
 

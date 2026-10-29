@@ -76,6 +76,33 @@ describe('_escapeOmmlTextContent - 修复 mml2omml 文本未转义的产物', ()
   })
 })
 
+describe('_stripAnnotations - 转换前剥离公式的其他表示', () => {
+  it('去掉 annotation 与 annotation-xml，保留 semantics 下的公式主体', async () => {
+    const { _stripAnnotations } = await import('./mml2omml.js')
+    const input =
+      '<math><semantics><mrow><mi>x</mi></mrow>' +
+      '<annotation encoding="application/x-tex">x</annotation>' +
+      '<annotation-xml encoding="MathML-Content"><ci>x</ci></annotation-xml>' +
+      '</semantics></math>'
+    expect(_stripAnnotations(input)).toBe(
+      '<math><semantics><mrow><mi>x</mi></mrow></semantics></math>',
+    )
+  })
+
+  it('多个 annotation 各自剥离，不会一次吞掉中间的公式内容', async () => {
+    const { _stripAnnotations } = await import('./mml2omml.js')
+    const input =
+      '<math><annotation>a</annotation><mi>keep</mi><annotation encoding="x">b</annotation></math>'
+    expect(_stripAnnotations(input)).toBe('<math><mi>keep</mi></math>')
+  })
+
+  it('无 annotation 时原样返回', async () => {
+    const { _stripAnnotations } = await import('./mml2omml.js')
+    const input = '<math><mi>x</mi></math>'
+    expect(_stripAnnotations(input)).toBe(input)
+  })
+})
+
 describe('mathmlToOmml 软退回', () => {
   it('正常路径：返回非空 OMML 字符串', async () => {
     const { mathmlToOmml } = await import('./mml2omml.js')
@@ -94,6 +121,22 @@ describe('mathmlToOmml 软退回', () => {
     const r2 = await mathmlToOmml('<math><mn>2</mn></math>')
     expect(r1).toBeNull()
     expect(r2).toBeNull()
+    expect(warnSpy).toHaveBeenCalledTimes(1)
+    warnSpy.mockRestore()
+  })
+
+  it('warnIfMissing: false 时依赖缺失不告警，也不占用「只告警一次」的名额', async () => {
+    vi.doMock('mathml2omml', () => {
+      throw new Error('module not found')
+    })
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const { mathmlToOmml } = await import('./mml2omml.js')
+    expect(
+      await mathmlToOmml('<math><mn>1</mn></math>', undefined, { warnIfMissing: false }),
+    ).toBeNull()
+    expect(warnSpy).not.toHaveBeenCalled()
+    // 之后遇到需要告警的公式仍会告警
+    await mathmlToOmml('<math><mn>2</mn></math>')
     expect(warnSpy).toHaveBeenCalledTimes(1)
     warnSpy.mockRestore()
   })

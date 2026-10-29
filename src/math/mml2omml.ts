@@ -2,7 +2,8 @@
 //
 // 设计要点：
 // 1. mathml2omml 是 LGPL-3.0 的可选 peerDependency，运行时通过动态 import 加载。
-//    未安装时返回 null，调用方退回 [math] 文本占位，且只警告一次。
+//    未安装时返回 null，调用方退回文本占位，且只警告一次。带 TeX 源码的公式优先走 math/latex.ts，
+//    只有 TeX 转换失败时才轮到这里。
 // 2. parse5 重新序列化 <math> 时会丢失 xmlns（因为它把命名空间属性当普通 attr 跳过），
 //    转换前必须确保根元素含 xmlns="http://www.w3.org/1998/Math/MathML"，否则
 //    mathml2omml 不识别。
@@ -43,24 +44,27 @@ export function _resetForTest(): void {
  * 失败（依赖缺失 / 转换抛错）时返回 null，调用方负责退回占位。
  *
  * @param warn 警告出口；调用方传入经 makeWarn(logger) 构造的函数，缺省退 console.warn
+ * @param options.warnIfMissing 依赖缺失时是否告警（默认 true）。带 TeX 源码的公式已由 latexToMath
+ *   处理过，调用方据此关掉告警，免得只用 KaTeX 的调用方被反复提示安装 LGPL 依赖
  */
 export async function mathmlToOmml(
   mathml: string,
   warn: WarnFn = makeWarn(undefined),
+  options: { warnIfMissing?: boolean } = {},
 ): Promise<string | null> {
   const conv = await loadConverter()
   if (conv === null) {
-    if (!warned) {
+    if (options.warnIfMissing !== false && !warned) {
       warned = true
       warn(
-        'wp-html-to-docx: <math> detected but optional peer "mathml2omml" is not installed. ' +
-          'Install it to enable real OMML output; falling back to "[math]" placeholder.',
+        'wp-html-to-docx: <math> without a TeX annotation detected but optional peer "mathml2omml" is not installed. ' +
+          'Install it to enable real OMML output; falling back to a "[math]" placeholder.',
       )
     }
     return null
   }
   try {
-    const raw = conv(_ensureMathmlNamespace(mathml))
+    const raw = conv(_stripAnnotations(_ensureMathmlNamespace(mathml)))
     return _escapeOmmlTextContent(raw)
   } catch (err) {
     // 转换异常（极端 MathML 输入）：吞掉并降级，避免整个文档构建失败
@@ -92,6 +96,18 @@ export function _escapeOmmlTextContent(omml: string): string {
       return `<m:t${attrs}>${safe}</m:t>`
     },
   )
+}
+
+/**
+ * 去掉 `<annotation>` / `<annotation-xml>`：它们是公式的其他表示（如 KaTeX 写入的 TeX 源码），
+ * 本就不参与渲染；mathml2omml 不认识它们，每个公式都会往 console.warn 打一行
+ * `Type not supported: annotation`，且无法经 logger 收口。
+ * 输入来自 serializeNode，标签总是成对闭合，非贪婪匹配即可。
+ *
+ * 以 `_` 前缀导出供测试直接断言；外部代码不应使用。
+ */
+export function _stripAnnotations(mathml: string): string {
+  return mathml.replace(/<(annotation(?:-xml)?)\b[^>]*>[\s\S]*?<\/\1>/gi, '')
 }
 
 /**

@@ -2,6 +2,7 @@
 
 import {
   AlignmentType,
+  Bookmark,
   BorderStyle,
   HeadingLevel,
   PageBreak,
@@ -10,11 +11,11 @@ import {
   type FileChild,
   type ParagraphChild,
 } from 'docx'
-import type { Block, BlockAlign } from '../types.js'
+import type { Block, BlockAlign, Inline } from '../types.js'
 import type { BuildContext } from '../ir/buildContext.js'
 import { inlinesToRuns } from './runs.js'
 import { tableBlockToFileChild } from './tables.js'
-import { blockOmmlToImported, ommlToImported } from './ommlImport.js'
+import { mathFallbackText, renderMath } from './ommlImport.js'
 import { INDENT_PER_LEVEL } from './numbering.js'
 
 const ALIGN_MAP: Record<BlockAlign, (typeof AlignmentType)[keyof typeof AlignmentType]> = {
@@ -39,6 +40,18 @@ const HEADING_MAP = {
   6: HeadingLevel.HEADING_6,
 } as const
 
+/**
+ * 段落类块的内容：inline runs 外再按 anchors 包上 Word 书签（多个时逐层嵌套），供 `#id` 链接跳转。
+ */
+function paragraphChildren(
+  block: { inlines: Inline[]; anchors?: string[] },
+  ctx: BuildContext,
+): ParagraphChild[] {
+  let children = inlinesToRuns(block.inlines, ctx)
+  for (const name of block.anchors ?? []) children = [new Bookmark({ id: name, children })]
+  return children
+}
+
 export function blocksToChildren(blocks: Block[], ctx: BuildContext): FileChild[] {
   const out: FileChild[] = []
   for (const block of blocks) appendBlock(block, out, ctx)
@@ -51,7 +64,7 @@ function appendBlock(block: Block, out: FileChild[], ctx: BuildContext): void {
       out.push(
         new Paragraph({
           alignment: toAlignment(block.align),
-          children: inlinesToRuns(block.inlines, ctx),
+          children: paragraphChildren(block, ctx),
         }),
       )
       return
@@ -60,7 +73,7 @@ function appendBlock(block: Block, out: FileChild[], ctx: BuildContext): void {
         new Paragraph({
           heading: HEADING_MAP[block.level],
           alignment: toAlignment(block.align),
-          children: inlinesToRuns(block.inlines, ctx),
+          children: paragraphChildren(block, ctx),
         }),
       )
       return
@@ -69,7 +82,7 @@ function appendBlock(block: Block, out: FileChild[], ctx: BuildContext): void {
         new Paragraph({
           numbering: { reference: block.ref.reference, level: block.ref.level },
           alignment: toAlignment(block.align),
-          children: inlinesToRuns(block.inlines, ctx),
+          children: paragraphChildren(block, ctx),
         }),
       )
       return
@@ -79,7 +92,7 @@ function appendBlock(block: Block, out: FileChild[], ctx: BuildContext): void {
         new Paragraph({
           indent: { left: INDENT_PER_LEVEL * (block.level + 1) },
           alignment: toAlignment(block.align),
-          children: inlinesToRuns(block.inlines, ctx),
+          children: paragraphChildren(block, ctx),
         }),
       )
       return
@@ -108,23 +121,16 @@ function appendBlock(block: Block, out: FileChild[], ctx: BuildContext): void {
       out.push(new Paragraph({ children: [new PageBreak()] }))
       return
     case 'math': {
-      const omml = ctx.mathOmml.get(block.mathml)
       // walker 已把无 display=block 的 math 收进了行内路径（inlineCollector），
       // 这里实际只会走到 block.display === 'block' 分支。inline 分支是保险 fallback：
       // 万一外部代码直接构造 Block.math({display:'inline'}) 也不会渲染失败
-      const ic =
-        omml !== undefined
-          ? block.display === 'block'
-            ? blockOmmlToImported(omml)
-            : ommlToImported(omml)
-          : null
-      if (ic !== null) {
-        // ImportedXmlComponent 不在 ParagraphChild 类型联合内，但运行时兼容
-        out.push(new Paragraph({ children: [ic as unknown as ParagraphChild] }))
-      } else {
-        // 转换失败 / 依赖缺失：退回 [math] 占位段
-        out.push(new Paragraph({ children: [new TextRun({ text: '[math]' })] }))
-      }
+      const run = renderMath(block.mathml, block.display, ctx)
+      // 两种转换都不可用：退回 TeX 源码或 [math] 占位段
+      out.push(
+        new Paragraph({
+          children: [run ?? new TextRun({ text: mathFallbackText(block.tex, block.display) })],
+        }),
+      )
       return
     }
     default:
@@ -155,7 +161,7 @@ function appendBlockquote(
         indent: blockquoteIndent(extraIndent),
         border: BLOCKQUOTE_BORDER,
         alignment: toAlignment(block.align),
-        children: inlinesToRuns(block.inlines, ctx),
+        children: paragraphChildren(block, ctx),
       }),
     )
     return
@@ -168,7 +174,7 @@ function appendBlockquote(
         indent: blockquoteIndent(extraIndent),
         border: BLOCKQUOTE_BORDER,
         alignment: toAlignment(block.align),
-        children: inlinesToRuns(block.inlines, ctx),
+        children: paragraphChildren(block, ctx),
       }),
     )
     return

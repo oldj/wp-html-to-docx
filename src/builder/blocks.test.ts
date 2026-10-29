@@ -66,6 +66,27 @@ describe('builder XML 断言 - 文本块', () => {
     expect(xml).toContain('link')
   })
 
+  it('链接文字挂 Hyperlink 字符样式，且样式表里有该样式定义', async () => {
+    // 防回归：此前链接 run 无样式，在 Word 中显示为普通黑字，看不出是链接
+    const u8 = await htmlToDocx('<p>a <a href="https://example.com">link</a> b</p>')
+    const files = unzipSync(u8)
+    const xml = strFromU8(files['word/document.xml']!)
+    const link = /<w:hyperlink[^>]*>([\s\S]*?)<\/w:hyperlink>/.exec(xml)?.[1] ?? ''
+    expect(link).toContain('<w:rStyle w:val="Hyperlink"/>')
+    // 链接外的普通文本不应带 Hyperlink 样式
+    expect(xml.match(/w:val="Hyperlink"/g)).toHaveLength(1)
+    expect(strFromU8(files['word/styles.xml']!)).toMatch(/w:styleId="Hyperlink"/)
+  })
+
+  it('链接上的显式 color 作为直接格式与 Hyperlink 样式并存', async () => {
+    const xml = await getDocumentXml(
+      '<p><a href="https://example.com" style="color: red">link</a></p>',
+    )
+    const link = /<w:hyperlink[^>]*>([\s\S]*?)<\/w:hyperlink>/.exec(xml)?.[1] ?? ''
+    expect(link).toContain('<w:rStyle w:val="Hyperlink"/>')
+    expect(link).toContain('<w:color w:val="FF0000"/>')
+  })
+
   it('br 产生 <w:br/>', async () => {
     const xml = await getDocumentXml('<p>a<br/>b</p>')
     expect(xml).toMatch(/<w:br\s*\/>|<w:br\s/)
@@ -109,15 +130,15 @@ describe('builder XML 断言 - 列表内软换行', () => {
     expect(numPrMatches.length).toBe(2)
   })
 
-  it('li 内 <table> 跟随列表缩进：产出 <w:tblInd w:w="720">，且 tblW 切到 auto 避免右溢出', async () => {
+  it('li 内 <table> 跟随列表缩进：产出 <w:tblInd w:w="720">，且 tblW 为扣掉缩进的 dxa 宽避免右溢出', async () => {
     const xml = await getDocumentXml('<ul><li><table><tr><td>x</td></tr></table></li></ul>')
     // 属性顺序由 docx 库决定，分别断言两个属性各自存在
     const tblIndMatch = xml.match(/<w:tblInd\s[^/>]*\/>/)?.[0] ?? ''
     expect(tblIndMatch).toContain('w:w="720"')
     expect(tblIndMatch).toContain('w:type="dxa"')
-    // 切到 auto 宽：不应再出现 pct 宽
+    // 不应再出现 pct 宽（tblInd + 100% 会右溢出）
     expect(xml).not.toMatch(/<w:tblW[^>]*w:type="pct"/)
-    expect(xml).toMatch(/<w:tblW[^>]*w:type="auto"/)
+    expect(xml).toMatch(/<w:tblW[^>]*w:type="dxa"/)
   })
 
   it('顶层 <table>（不在 list 内）维持 100% pct 宽且无 tblInd', async () => {

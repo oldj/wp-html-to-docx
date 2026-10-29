@@ -12,7 +12,6 @@ import {
   PageOrientation,
   Paragraph,
   Tab,
-  TabStopPosition,
   TabStopType,
   TextRun,
   type FileChild,
@@ -29,8 +28,13 @@ import {
   type PageNumberOptions,
   type PageNumberPosition,
 } from '../options.js'
-import { resolvePageSizeTwip, safeNonNegativeInt, safeTwip } from '../utils/units.js'
-import { makeWarn, type WarnFn } from '../utils/log.js'
+import {
+  pageContentWidthTwip,
+  resolvePageSizeTwip,
+  safeNonNegativeInt,
+  safeTwip,
+} from '../utils/units.js'
+import { makeWarn, silentWarn, type WarnFn } from '../utils/log.js'
 
 type Slot = 'left' | 'center' | 'right'
 type Region = 'header' | 'footer'
@@ -48,17 +52,22 @@ export function buildSection(
   const size = resolveSize(page.size ?? DEFAULT_OPTIONS.page.size, orientation, warn)
   const margin = resolveMargin(options)
   const pageNumbers = resolvePageNumbers(options.pageNumber)
+  // 页眉页脚三槽的 tab stop 要落在本节版心的中点与右沿。
+  // 纸张名非法的警告上面 resolveSize 已发过，这里静默，避免同一问题告警两次
+  const contentWidth = pageContentWidthTwip(options, silentWarn)
 
   const headerParagraphs = buildHeaderFooterParagraphs(
     options.header,
     'header',
     options.pageNumber,
+    contentWidth,
     warn,
   )
   const footerParagraphs = buildHeaderFooterParagraphs(
     options.footer,
     'footer',
     options.pageNumber,
+    contentWidth,
     warn,
   )
 
@@ -134,6 +143,7 @@ function buildHeaderFooterParagraphs(
   value: HeaderFooterValue | undefined,
   region: Region,
   pageNumber: PageNumberOptions | undefined,
+  contentWidth: number,
   warn: WarnFn,
 ): Paragraph[] {
   const slots = normalizeSlots(value)
@@ -151,7 +161,7 @@ function buildHeaderFooterParagraphs(
   if (slots.left === undefined && slots.center === undefined && slots.right === undefined) {
     return []
   }
-  return [composeThreeSlotParagraph(slots)]
+  return [composeThreeSlotParagraph(slots, contentWidth)]
 }
 
 function normalizeSlots(
@@ -179,9 +189,15 @@ function resolveSlottedPageNumber(
   return { slot, template: options.template ?? '{PAGE}' }
 }
 
-function composeThreeSlotParagraph(slots: Record<Slot, SlotContent | undefined>): Paragraph {
-  // 单段三槽对齐：left / center / right，用 tab stops 实现
-  // 中部 tab 在页面中间（4500 twip），右部 tab 在页面右侧（约 9000 twip / Letter 内宽 6.5in）
+/**
+ * 单段三槽对齐：left / center / right，用 tab stops 实现。
+ * @param contentWidth 版心宽度（twip）。tab stop 位置相对左边距起算，故中部取其一半、右部取其全宽；
+ *   不能写死常量，否则横向 / 大纸张 / 自定义边距时右槽会落在页面中部
+ */
+function composeThreeSlotParagraph(
+  slots: Record<Slot, SlotContent | undefined>,
+  contentWidth: number,
+): Paragraph {
   const children: ParagraphChild[] = []
   if (slots.left !== undefined) children.push(...renderSlot(slots.left))
   if (slots.center !== undefined) {
@@ -195,8 +211,8 @@ function composeThreeSlotParagraph(slots: Record<Slot, SlotContent | undefined>)
   return new Paragraph({
     alignment: AlignmentType.LEFT,
     tabStops: [
-      { type: TabStopType.CENTER, position: TabStopPosition.MAX / 2 },
-      { type: TabStopType.RIGHT, position: TabStopPosition.MAX },
+      { type: TabStopType.CENTER, position: Math.round(contentWidth / 2) },
+      { type: TabStopType.RIGHT, position: contentWidth },
     ],
     children,
   })
